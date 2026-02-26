@@ -149,7 +149,9 @@ _bra_read_all() {
                 printf '%s %s %s\n' "$branch" "$sha" "$date"
             done < <(_bra_refs_read)
             while IFS=' ' read -r branch sha date rest; do
-                [[ -z "${seen[$branch]+x}" ]] && printf '%s %s %s\n' "$branch" "$sha" "$date"
+                if [[ -z "${seen[$branch]+x}" ]]; then
+                    printf '%s %s %s\n' "$branch" "$sha" "$date"
+                fi
             done < <(_bra_file_read)
             ;;
         *)
@@ -163,16 +165,24 @@ _bra_write() {
     local branch="$1" sha="$2" date="$3"
     local storage
     storage=$(_bra_config_storage)
-    [[ "$storage" == "file" || "$storage" == "both" ]] && _bra_file_write "$branch" "$sha" "$date"
-    [[ "$storage" == "refs" || "$storage" == "both" ]] && _bra_refs_write "$branch" "$sha"
+    if [[ "$storage" == "file" || "$storage" == "both" ]]; then
+        _bra_file_write "$branch" "$sha" "$date"
+    fi
+    if [[ "$storage" == "refs" || "$storage" == "both" ]]; then
+        _bra_refs_write "$branch" "$sha"
+    fi
 }
 
 _bra_delete() {
     local branch="$1"
     local storage
     storage=$(_bra_config_storage)
-    [[ "$storage" == "file" || "$storage" == "both" ]] && _bra_file_delete "$branch"
-    [[ "$storage" == "refs" || "$storage" == "both" ]] && _bra_refs_delete "$branch"
+    if [[ "$storage" == "file" || "$storage" == "both" ]]; then
+        _bra_file_delete "$branch"
+    fi
+    if [[ "$storage" == "refs" || "$storage" == "both" ]]; then
+        _bra_refs_delete "$branch"
+    fi
 }
 
 _bra_lookup_branch() {
