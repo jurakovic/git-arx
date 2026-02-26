@@ -393,7 +393,7 @@ echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 
 ## Notes
 
-- `git bra update` detects branches to archive via `%(upstream:short)` and `%(upstream:track)`. It archives branches with no upstream configured, and also branches whose upstream was deleted on the remote (`%(upstream:track)` = `[gone]`). Note: git retains the tracking *configuration* after `git remote prune` — only the remote tracking ref is removed, not the `branch.<name>.remote` config — so checking `%(upstream:short)` alone is insufficient.
+- `git bra update` detects branches to archive by checking whether the upstream tracking ref exists locally via `git rev-parse --verify`. If `%(upstream)` (the full ref path, e.g. `refs/remotes/origin/branch`) resolves to nothing, the branch is archived. This handles both branches that never had a remote and branches whose remote was deleted (after `git fetch --prune`).
 - `git bra add` on an already-archived branch updates the record to the current HEAD — it does not duplicate the entry.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
 - The tool requires bash 4+ (for associative arrays). Git for Windows ships with bash 4.4 or later.

@@ -226,9 +226,9 @@ cmd_remove() {
 
 cmd_update() {
     local archived=0
-    while IFS=$'\t' read -r branch upstream track; do
-        # Archive if: no upstream configured, OR upstream was deleted ([gone])
-        if [[ -n "$upstream" && "$track" != "[gone]" ]]; then
+    while IFS=$'\t' read -r branch upstream_ref; do
+        # Skip if upstream ref exists locally (live remote tracking branch)
+        if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
         local sha date
@@ -237,7 +237,7 @@ cmd_update() {
         _bra_write "$branch" "$sha" "$date"
         printf 'Archived: %s\n' "$branch"
         archived=$(( archived + 1 ))
-    done < <(git for-each-ref --format='%(refname:short)%09%(upstream:short)%09%(upstream:track)' refs/heads/)
+    done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
     printf 'Done. Archived %d branch(es).\n' "$archived"
 }
 

@@ -251,9 +251,13 @@ git for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads/
 - Branches that were always local and never had a remote
 - Branches that had a remote which was subsequently deleted (the upstream config is cleared when the remote ref is pruned)
 
-Branches are skipped only if they have a live upstream. The format uses tab as delimiter and reads three fields: `branch`, `upstream`, and `track` (`%(upstream:track)` outputs `[gone]`, `[ahead N]`, `[behind N]`, etc.). A branch is archived if upstream is empty **or** track is `[gone]`.
+Branches are skipped only if their upstream tracking ref **exists locally**. The format reads two tab-delimited fields: `branch` and `upstream_ref` (`%(upstream)` — the full ref path, e.g. `refs/remotes/origin/main`). A branch is archived if the upstream ref is empty (no upstream configured) or `git rev-parse --verify "$upstream_ref"` fails (upstream configured but the tracking ref doesn't exist locally).
 
-This is important because `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches — checking only for an empty upstream would silently skip them.
+This approach is more robust than checking `%(upstream:track)` for the string `[gone]` because:
+- `[gone]` can vary by git version or locale
+- The ref-existence check is a direct, binary fact about the object store
+
+Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches. Using `%(upstream)` (the full ref) and checking whether that ref resolves correctly handles both the "never had a remote" and "remote was deleted" cases.
 
 ---
 
