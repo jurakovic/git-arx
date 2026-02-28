@@ -190,7 +190,6 @@ _bra_lookup_branch() {
     _bra_read_all | while IFS=' ' read -r b sha date rest; do
         if [[ "$b" == "$branch" ]]; then
             printf '%s %s\n' "$sha" "$date"
-            return 0
         fi
     done
 }
@@ -324,8 +323,7 @@ cmd_log() {
         exit 1
     fi
 
-    # 141 = 128+SIGPIPE: pager (less) closed the pipe early -- not an error
-    git log "$sha" "$@" || [[ $? -eq 141 ]]
+    git log "$sha" "$@"
 }
 
 cmd_checkout() {
