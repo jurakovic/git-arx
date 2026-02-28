@@ -324,7 +324,7 @@ cmd_log() {
         exit 1
     fi
 
-    exec git log "$sha" "$@"
+    git log "$sha" "$@"
 }
 
 cmd_checkout() {

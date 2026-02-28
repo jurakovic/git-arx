@@ -214,15 +214,13 @@ cmd_log() {
     local branch="$1"
     shift          # $@ now contains only the git log flags
     ...
-    exec git log "$sha" "$@"
+    git log "$sha" "$@"
 }
 ```
 
-`shift` removes the branch name argument, leaving `"$@"` as whatever the user typed after the branch name. `exec` replaces the current process with `git log`, meaning:
+`shift` removes the branch name argument, leaving `"$@"` as whatever the user typed after the branch name. All git log flags, format strings, file path filters, and revision ranges work as expected.
 
-1. The exit code of `git log` becomes the exit code of `git bra log`
-2. There is no extra bash process sitting in the process table while git log runs
-3. All git log flags, format strings, file path filters, and revision ranges work as expected
+`exec` is intentionally not used here. On Windows/MINGW64, `exec` does not properly transfer the pipe file descriptor to the replacement process, so git detects a terminal instead of a pipe, opens the pager, and the output never reaches the caller. A plain `git log` call avoids this and behaves correctly on all platforms.
 
 ---
 
