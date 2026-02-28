@@ -226,6 +226,14 @@ git bra push
 #  * [new ref]   refs/bra/feature/my-feature -> refs/bra/feature/my-feature
 ```
 
+Use `--dry-run` to see what would be pushed without actually pushing:
+
+```bash
+git bra push --dry-run
+# To origin
+#  * [new ref]   refs/bra/feature/my-feature -> refs/bra/feature/my-feature
+```
+
 Requires `refs` storage to be enabled.
 
 ---

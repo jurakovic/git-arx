@@ -582,7 +582,14 @@ cmd_prune() {
 
 cmd_push() {
     _bra_require_storage refs
-    git push origin 'refs/bra/*:refs/bra/*'
+    local dry_run=""
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run) dry_run="--dry-run" ;;
+            *) printf 'git-bra: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+        esac
+    done
+    git push $dry_run origin 'refs/bra/*:refs/bra/*'
 }
 
 cmd_pull() {
@@ -622,7 +629,7 @@ COMMANDS
   checkout <branch>             Restore a branch from the archive
   prune [--force]               Delete local branches that are archived
   merge <f1> <f2> -o <out>      Merge two .gitarchive files     [file only]
-  push                          Push archived refs to remote     [refs only]
+  push [--dry-run]              Push archived refs to remote     [refs only]
   pull                          Pull archived refs from remote   [refs only]
   sync [--check]                Reconcile file and refs backends [both only]
        [--force-file]
