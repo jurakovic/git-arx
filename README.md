@@ -42,6 +42,9 @@ git config --global alias.bra '!git-bra'
 # Archive all local branches that have no remote tracking branch
 git bra update
 
+# Delete the branches you just archived
+git bra prune
+
 # See what's archived
 git bra list
 
@@ -94,6 +97,40 @@ git bra update
 ```
 
 Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches whose upstream was deleted on the remote (shown as `[gone]` in `git branch -vv`) are archived.
+
+---
+
+### `git bra prune`
+
+Delete all local branches that are currently in the archive. Prompts for confirmation before proceeding.
+
+```bash
+git bra prune
+# The following local branches will be permanently deleted:
+#   feature/old-idea
+#   fix/quick-hack
+#
+# WARNING: This is a dangerous operation. Deleted branches cannot be
+# recovered from git — only from the git-bra archive.
+# Type "yes" to continue: yes
+# Deleted branch feature/old-idea (was a1b2c3d4).
+# Deleted branch fix/quick-hack (was deadbeef).
+# Done. Deleted 2 branch(es).
+```
+
+If you are currently checked out on an archived branch, it is skipped with a notice.
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--force`, `-f` | Skip the confirmation prompt and delete immediately. |
+
+```bash
+git bra prune --force
+```
+
+A typical workflow is `git bra update` followed by `git bra prune` — archive first, then delete in one step.
 
 ---
 
@@ -338,9 +375,9 @@ Each backend covers the other's weakness:
 ### Basic local usage
 
 ```bash
-# Before cleaning up branches
+# Archive and delete stale branches in two steps
 git bra update
-git branch -d feature/done-1 feature/done-2
+git bra prune
 
 # Later, need to find something
 git bra list

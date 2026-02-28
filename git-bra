@@ -507,6 +507,79 @@ cmd_sync() {
     [[ $check -eq 1 ]] && printf 'Check complete.\n' || printf 'Sync complete.\n'
 }
 
+cmd_prune() {
+    local force=0
+    for arg in "$@"; do
+        case "$arg" in
+            --force|-f) force=1 ;;
+            *) printf 'git-bra: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+        esac
+    done
+
+    # Determine current branch so we can skip it
+    local current_branch
+    current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
+
+    # Collect archived branches that still exist locally
+    local -a branches=()
+    local -a skipped=()
+    while IFS=' ' read -r branch sha date rest; do
+        if ! git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
+            continue  # already deleted locally
+        fi
+        if [[ "$branch" == "$current_branch" ]]; then
+            skipped+=("$branch")
+            continue
+        fi
+        branches+=("$branch")
+    done < <(_bra_read_all)
+
+    if [[ ${#branches[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; then
+        printf 'No archived branches found in local branches.\n'
+        return 0
+    fi
+
+    if [[ ${#branches[@]} -gt 0 ]]; then
+        printf 'The following local branches will be permanently deleted:\n'
+        for b in "${branches[@]}"; do
+            printf '  %s\n' "$b"
+        done
+        printf '\n'
+    fi
+
+    if [[ ${#skipped[@]} -gt 0 ]]; then
+        printf 'Skipped (currently checked out):\n'
+        for b in "${skipped[@]}"; do
+            printf '  %s\n' "$b"
+        done
+        printf '\n'
+    fi
+
+    if [[ ${#branches[@]} -eq 0 ]]; then
+        printf 'Nothing to delete.\n'
+        return 0
+    fi
+
+    if [[ $force -eq 0 ]]; then
+        printf 'WARNING: This is a dangerous operation. Deleted branches cannot be\n'
+        printf 'recovered from git — only from the git-bra archive.\n'
+        printf 'Type "yes" to continue: '
+        local answer
+        read -r answer || true
+        if [[ "$answer" != "yes" ]]; then
+            printf 'Aborted.\n'
+            exit 1
+        fi
+    fi
+
+    local deleted=0
+    for b in "${branches[@]}"; do
+        git branch -D "$b"
+        deleted=$(( deleted + 1 ))
+    done
+    printf 'Done. Deleted %d branch(es).\n' "$deleted"
+}
+
 cmd_push() {
     _bra_require_storage refs
     git push origin 'refs/bra/*:refs/bra/*'
@@ -547,6 +620,7 @@ COMMANDS
        [--storage=file|refs|both]
   log <branch> [git-log-flags]  Show commits (delegates to git log)
   checkout <branch>             Restore a branch from the archive
+  prune [--force]               Delete local branches that are archived
   merge <f1> <f2> -o <out>      Merge two .gitarchive files     [file only]
   push                          Push archived refs to remote     [refs only]
   pull                          Pull archived refs from remote   [refs only]
@@ -595,6 +669,7 @@ main() {
         list)     cmd_list "$@" ;;
         log)      cmd_log "$@" ;;
         checkout) cmd_checkout "$@" ;;
+        prune)    cmd_prune "$@" ;;
         merge)    cmd_merge "$@" ;;
         push)     cmd_push "$@" ;;
         pull)     cmd_pull "$@" ;;
