@@ -318,6 +318,12 @@ cmd_log() {
     local sha
     sha=$(printf '%s' "$entry" | awk '{print $1}')
 
+    if ! _bra_sha_exists "$sha"; then
+        printf 'git-bra: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
+        printf 'The commit history is no longer available. You can remove it with: git bra remove %s\n' "$branch" >&2
+        exit 1
+    fi
+
     exec git log "$sha" "$@"
 }
 
