@@ -160,15 +160,15 @@ git for-each-ref \
 
 ### Remote Operations
 
-Refs in `refs/bra/` are not pushed by default. Git only pushes `refs/heads/*` and `refs/tags/*` in a standard `git push`. The `remote push` command uses an explicit refspec:
+Refs in `refs/bra/` are not pushed by default. Git only pushes `refs/heads/*` and `refs/tags/*` in a standard `git push`. The `push` command uses an explicit refspec:
 
 ```bash
 git push origin 'refs/bra/*:refs/bra/*'
 ```
 
-This pushes all `refs/bra/` refs to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `remote pull` command uses the equivalent fetch refspec.
+This pushes all `refs/bra/` refs to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `pull` command uses the equivalent fetch refspec.
 
-This is also how the `both` backend can achieve fully automatic remote sync without `git bra remote push/pull`: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
+This is also how the `both` backend can achieve fully automatic remote sync without `git bra push/pull`: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
 
 ---
 
@@ -183,7 +183,7 @@ In normal usage, drift should not occur — every write operation hits both back
 1. Someone manually edits `.gitarchive` with a text editor
 2. Someone manually creates/deletes refs with raw git commands
 3. A script crash between the file write and the ref write
-4. `git bra remote pull` without `both` storage (updates refs but not file)
+4. `git bra pull` without `both` storage (updates refs but not file)
 
 ### Union Merge Algorithm
 
@@ -300,5 +300,5 @@ INTERNALS.md     This file
 - **No locking.** The archive file has no write lock. Concurrent invocations (unlikely for an interactive tool) could corrupt it. Acceptable trade-off.
 - **bash 4+ required.** Uses `declare -A` associative arrays. macOS ships bash 3.2; users need to install bash via Homebrew and ensure it's on their PATH.
 - **`merge` does not resolve SHA conflicts.** When the same branch appears in two files with different SHAs, the conflict is reported and the entry is skipped. The user must manually decide which SHA is correct and edit the output file. There is no `--force-file` / `--force-refs` equivalent for `merge` (unlike `sync`) because `merge` has no concept of a "primary" source.
-- **`remote push/pull` hardcodes `origin`.** The remote name is not configurable. This could be added via `bra.remote` config in a future version.
+- **`push/pull` hardcodes `origin`.** The remote name is not configurable. This could be added via `bra.remote` config in a future version.
 - **No autocomplete.** Branch name tab-completion for `add`, `remove`, `log`, `checkout` is not implemented. Shell completion scripts (bash/zsh/fish) would be a useful addition.

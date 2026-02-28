@@ -179,12 +179,12 @@ Requires `file` storage to be enabled.
 
 ---
 
-### `git bra remote push`
+### `git bra push`
 
 Push archived refs to the remote, making them available to other clones of the repository.
 
 ```bash
-git bra remote push
+git bra push
 # To origin
 #  * [new ref]   refs/bra/feature/my-feature -> refs/bra/feature/my-feature
 ```
@@ -193,12 +193,12 @@ Requires `refs` storage to be enabled.
 
 ---
 
-### `git bra remote pull`
+### `git bra pull`
 
 Fetch archived refs from the remote. If `both` storage is configured, the `.gitarchive` file is automatically updated to match.
 
 ```bash
-git bra remote pull
+git bra pull
 # From origin
 #  * [new ref]   refs/bra/feature/my-feature -> refs/bra/feature/my-feature
 # Synced fetched refs to .gitarchive
@@ -319,9 +319,9 @@ git log refs/bra/feature/my-feature --oneline
 **Strengths:**
 - As long as a ref exists, `git gc` will never prune the commit it points to
 - Native git integration — any git command that accepts a ref or SHA works
-- Can be shared via `git bra remote push` / `git bra remote pull`
+- Can be shared via `git bra push` / `git bra pull`
 
-**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git bra remote push`).
+**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git bra push`).
 
 ### Both (default)
 
@@ -329,7 +329,7 @@ Uses both backends for every operation. Writes go to both; reads prefer refs and
 
 Each backend covers the other's weakness:
 - Refs protect commits from gc; file provides portability and human-readability
-- If you commit `.gitarchive` to the repo, you get automatic remote sync for free — no need to use `git bra remote push/pull`
+- If you commit `.gitarchive` to the repo, you get automatic remote sync for free — no need to use `git bra push/pull`
 
 ---
 
@@ -356,13 +356,13 @@ Enable refs storage (included in the default `both`), then push your archived re
 
 ```bash
 git bra update
-git bra remote push
+git bra push
 ```
 
 On another machine:
 
 ```bash
-git bra remote pull
+git bra pull
 git bra list
 ```
 

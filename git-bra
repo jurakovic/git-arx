@@ -507,25 +507,12 @@ cmd_sync() {
     [[ $check -eq 1 ]] && printf 'Check complete.\n' || printf 'Sync complete.\n'
 }
 
-cmd_remote() {
-    local subcmd="${1:-}"
-    shift || true
-    case "$subcmd" in
-        push) cmd_remote_push "$@" ;;
-        pull) cmd_remote_pull "$@" ;;
-        "")
-            printf 'Usage: git bra remote push|pull\n' >&2; exit 1 ;;
-        *)
-            printf 'git-bra: unknown remote subcommand "%s"\n' "$subcmd" >&2; exit 1 ;;
-    esac
-}
-
-cmd_remote_push() {
+cmd_push() {
     _bra_require_storage refs
     git push origin 'refs/bra/*:refs/bra/*'
 }
 
-cmd_remote_pull() {
+cmd_pull() {
     _bra_require_storage refs
     git fetch origin 'refs/bra/*:refs/bra/*'
 
@@ -561,8 +548,8 @@ COMMANDS
   log <branch> [git-log-flags]  Show commits (delegates to git log)
   checkout <branch>             Restore a branch from the archive
   merge <f1> <f2> -o <out>      Merge two .gitarchive files     [file only]
-  remote push                   Push archived refs to remote     [refs only]
-  remote pull                   Pull archived refs from remote   [refs only]
+  push                          Push archived refs to remote     [refs only]
+  pull                          Pull archived refs from remote   [refs only]
   sync [--check]                Reconcile file and refs backends [both only]
        [--force-file]
        [--force-refs]
@@ -574,7 +561,7 @@ STORAGE BACKENDS
   file   Plain text .gitarchive file. Portable and committable, but
          commits may be lost after git gc.
   refs   Git refs under refs/bra/<branch>. Protects commits from gc.
-         Never pushed to remote unless you run: git bra remote push
+         Never pushed to remote unless you run: git bra push
   both   Uses both (default). Each backend covers the other's weakness.
 
 OTHER CONFIG
@@ -587,7 +574,7 @@ EXAMPLES
   git bra log feature/my-feature --oneline -10
   git bra checkout feature/my-feature
   git bra sync --check
-  git bra remote push
+  git bra push
 
 EOF
 }
@@ -609,7 +596,8 @@ main() {
         log)      cmd_log "$@" ;;
         checkout) cmd_checkout "$@" ;;
         merge)    cmd_merge "$@" ;;
-        remote)   cmd_remote "$@" ;;
+        push)     cmd_push "$@" ;;
+        pull)     cmd_pull "$@" ;;
         sync)     cmd_sync "$@" ;;
         help|--help|-h) cmd_help ;;
         "")       cmd_help; exit 1 ;;
