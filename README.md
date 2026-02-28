@@ -117,9 +117,12 @@ git bra list
 | `--sort=date` | Sort by commit date (default) |
 | `--order=asc` | Ascending order |
 | `--order=desc` | Descending order (default) |
+| `--storage=file\|refs\|both` | Show only branches from the given backend (default: configured storage) |
 
 ```bash
 git bra list --sort=name --order=asc
+git bra list --storage=refs
+git bra list --storage=file
 ```
 
 ---

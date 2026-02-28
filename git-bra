@@ -252,20 +252,34 @@ cmd_update() {
 }
 
 cmd_list() {
-    local sort_by="date" order="desc"
+    local sort_by="date" order="desc" list_storage=""
 
     for arg in "$@"; do
         case "$arg" in
-            --sort=name) sort_by="name" ;;
-            --sort=date) sort_by="date" ;;
+            --sort=name)  sort_by="name" ;;
+            --sort=date)  sort_by="date" ;;
             --order=asc)  order="asc" ;;
             --order=desc) order="desc" ;;
+            --storage=both|--storage=file|--storage=refs)
+                list_storage="${arg#--storage=}" ;;
+            --storage=*)
+                printf 'git-bra: invalid --storage value "%s" (use: file, refs, both)\n' "${arg#--storage=}" >&2
+                exit 1 ;;
             *) printf 'git-bra: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
+    # Validate that the requested backend is available in the current storage config
+    if [[ -n "$list_storage" ]]; then
+        _bra_require_storage "$list_storage"
+    fi
+
     local entries
-    entries=$(_bra_read_all)
+    case "$list_storage" in
+        file) entries=$(_bra_file_read) ;;
+        refs) entries=$(_bra_refs_read) ;;
+        *)    entries=$(_bra_read_all) ;;
+    esac
 
     if [[ -z "$entries" ]]; then
         printf 'No archived branches.\n'
@@ -531,6 +545,7 @@ COMMANDS
   update                        Archive all local branches with no upstream
   list [--sort=name|date]       List archived branches
        [--order=asc|desc]
+       [--storage=file|refs|both]
   log <branch> [git-log-flags]  Show commits (delegates to git log)
   checkout <branch>             Restore a branch from the archive
   merge <f1> <f2> -o <out>      Merge two .gitarchive files     [file only]
