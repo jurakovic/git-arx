@@ -223,8 +223,8 @@ git bra sync
 | Flag | Description |
 |---|---|
 | `--check` | Dry-run. Show differences without making any changes. |
-| `--force-file` | On SHA conflict, use `.gitarchive` as the source of truth. |
-| `--force-refs` | On SHA conflict, use refs as the source of truth. |
+| `--force-file` | Treat `.gitarchive` as the source of truth: resolve SHA conflicts using the file's SHA, and delete any refs-only entries from refs (they are absent from the file). |
+| `--force-refs` | Treat refs as the source of truth: resolve SHA conflicts using the ref's SHA, and delete any file-only entries from the file (they are absent from refs). |
 
 ```bash
 git bra sync --check
@@ -233,6 +233,7 @@ git bra sync --check
 
 git bra sync --force-refs
 # Resolved (force-refs): feature/old-idea -> file=a1b2c3d4
+# Removed from file (force-refs): fix/dead-end
 # Sync complete.
 ```
 

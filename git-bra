@@ -478,16 +478,28 @@ cmd_sync() {
             fi
         elif [[ -n "$rv" ]]; then
             local rsha="${rv%% *}" rdate="${rv#* }"
-            [[ $check -eq 1 ]] && printf 'refs-only: %s (%s)\n' "$b" "${rsha:0:8}" || {
+            if [[ $check -eq 1 ]]; then
+                printf 'refs-only: %s (%s)\n' "$b" "${rsha:0:8}"
+            elif [[ "$force" == "file" ]]; then
+                # File is authoritative — entry absent from file means remove it from refs
+                _bra_refs_delete "$b"
+                printf 'Removed from refs (force-file): %s\n' "$b"
+            else
                 _bra_file_write "$b" "$rsha" "$rdate"
                 printf 'Synced to file: %s\n' "$b"
-            }
+            fi
         else
             local fsha="${fv%% *}" fdate="${fv#* }"
-            [[ $check -eq 1 ]] && printf 'file-only: %s (%s)\n' "$b" "${fsha:0:8}" || {
+            if [[ $check -eq 1 ]]; then
+                printf 'file-only: %s (%s)\n' "$b" "${fsha:0:8}"
+            elif [[ "$force" == "refs" ]]; then
+                # Refs is authoritative — entry absent from refs means remove it from file
+                _bra_file_delete "$b"
+                printf 'Removed from file (force-refs): %s\n' "$b"
+            else
                 _bra_refs_write "$b" "$fsha"
                 printf 'Synced to refs: %s\n' "$b"
-            }
+            fi
         fi
     done
 
