@@ -169,15 +169,20 @@ test_update() {
     # --dry-run: shows branches without writing
     local dry_out
     dry_out=$("$BX" update --dry-run 2>&1)
-    if printf '%s' "$dry_out" | grep -qF "Would archive: feature/alpha"; then
-        pass "update: dry-run shows would-archive"
+    if printf '%s' "$dry_out" | grep -qF "Archived: feature/alpha"; then
+        pass "update: dry-run shows archived lines"
     else
-        fail "update: dry-run shows would-archive"
+        fail "update: dry-run shows archived lines"
     fi
-    if printf '%s' "$dry_out" | grep -qF "Would archive 3 branch(es)"; then
+    if printf '%s' "$dry_out" | grep -qF "Archived 3 branch(es)"; then
         pass "update: dry-run reports correct count"
     else
         fail "update: dry-run reports correct count"
+    fi
+    if printf '%s' "$dry_out" | grep -qF "(dry run — no changes written)"; then
+        pass "update: dry-run shows indicator"
+    else
+        fail "update: dry-run shows indicator"
     fi
     if [[ ! -f .gitarchive ]]; then
         pass "update: dry-run does not write archive"

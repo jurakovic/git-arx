@@ -123,9 +123,10 @@ Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches wh
 
 ```bash
 git bx update --dry-run
-# Would archive: feature/old-idea (Alice Smith)
-# Would archive: fix/quick-hack (Bob Jones)
-# Done. Would archive 2 branch(es).
+# Archived: feature/old-idea (Alice Smith)
+# Archived: fix/quick-hack (Bob Jones)
+# Done. Archived 2 branch(es).
+# (dry run — no changes written)
 ```
 
 ---
@@ -262,6 +263,7 @@ Use `--dry-run` to see what would be pushed without actually pushing:
 git bx push --dry-run
 # To origin
 #  * [new ref]   refs/bx/feature/my-feature -> refs/bx/feature/my-feature
+# (dry run — no changes written)
 ```
 
 Requires `refs` storage to be enabled.

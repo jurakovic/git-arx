@@ -251,19 +251,14 @@ cmd_update() {
         sha=$(git rev-parse "refs/heads/${branch}")
         date=$(git log -1 --format=%aI "refs/heads/${branch}")
         author=$(git log -1 --format=%an "refs/heads/${branch}")
-        if [[ $dry_run -eq 1 ]]; then
-            printf 'Would archive: %s (%s)\n' "$branch" "$author"
-        else
+        if [[ $dry_run -eq 0 ]]; then
             _bx_write "$branch" "$sha" "$date"
-            printf 'Archived: %s (%s)\n' "$branch" "$author"
         fi
+        printf 'Archived: %s (%s)\n' "$branch" "$author"
         archived=$(( archived + 1 ))
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
-    if [[ $dry_run -eq 1 ]]; then
-        printf 'Done. Would archive %d branch(es).\n' "$archived"
-    else
-        printf 'Done. Archived %d branch(es).\n' "$archived"
-    fi
+    printf 'Done. Archived %d branch(es).\n' "$archived"
+    [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true
 }
 
 cmd_list() {
@@ -613,6 +608,7 @@ cmd_push() {
         esac
     done
     git push $dry_run origin 'refs/bx/*:refs/bx/*'
+    [[ -n "$dry_run" ]] && printf '(dry run — no changes written)\n' || true
 }
 
 cmd_pull() {
