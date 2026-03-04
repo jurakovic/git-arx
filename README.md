@@ -2,8 +2,6 @@
 
 A git tool for archiving local branches. When you delete a branch, `git-bx` keeps a record of its name and last commit so you can list, inspect, and restore it later.
 
-Invoked as `git bx <command>` via a git alias.
-
 ---
 
 ## Why git-bx?
@@ -21,6 +19,23 @@ The usual answer is "just use `git reflog`" — but reflog is per-machine, expir
 **Why not just tag the tip commit?** You could — but then you need to remember to do it before deleting, name it something sensible, and maintain your own tagging convention. `git-bx` does this automatically for all branches at once and keeps a searchable list.
 
 **Why not GitHub/GitLab's "restore branch" button?** That only works if the branch was ever pushed. Local-only work — experiments, WIP commits, half-baked ideas — never touches the remote. Those are exactly the branches most worth archiving.
+
+---
+
+## Compatibility
+
+Requires **bash 4+** and **git**. Works anywhere those are present.
+
+| Environment | Status | Notes |
+|---|---|---|
+| Linux | Supported | bash 4+ is standard |
+| Windows — Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
+| Windows — WSL | Supported | Linux environment |
+| macOS — Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
+| macOS — system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
+| PowerShell / CMD | **Not supported** | No bash runtime |
+
+The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error — install bash via Homebrew and confirm `which bash` points to it.
 
 ---
 
@@ -56,27 +71,10 @@ curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh 
 **Manual setup (no install script):**
 
 ```bash
-cp git-bx ~/.local/bin/git-bx
+cp git-bx ~/.local/bin/git-bx   # Linux/macOS
 chmod +x ~/.local/bin/git-bx
 git config --global alias.bx '!git-bx'
 ```
-
----
-
-## Compatibility
-
-Requires **bash 4+** and **git**. Works anywhere those are present.
-
-| Environment | Status | Notes |
-|---|---|---|
-| Linux | Supported | bash 4+ is standard |
-| Windows — Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
-| Windows — WSL | Supported | Linux environment |
-| macOS — Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
-| macOS — system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
-| PowerShell / CMD | **Not supported** | No bash runtime |
-
-The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error — install bash via Homebrew and confirm `which bash` points to it.
 
 ---
 
@@ -106,32 +104,6 @@ git bx checkout feature/my-feature
 
 ## Commands
 
-### `git bx add <branch>`
-
-Archive a single branch. Stores its name and current HEAD SHA.
-
-```bash
-git bx add feature/my-feature
-# Archived: feature/my-feature at a1b2c3d4
-```
-
-If the branch is already in the archive, this updates its record to the current HEAD.
-
----
-
-### `git bx remove <branch>`
-
-Remove a branch from the archive.
-
-```bash
-git bx remove feature/my-feature
-# Removed: feature/my-feature
-```
-
-This does not delete the local branch — only removes it from the archive.
-
----
-
 ### `git bx status`
 
 Show which local branches would be archived by `git bx update` — branches with no remote tracking branch — along with their last committer. Nothing is written.
@@ -145,13 +117,13 @@ git bx status
 # 2 branch(es) would be archived by "git bx update".
 ```
 
-Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours.
+Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git bx update` to write the archive.
 
 ---
 
 ### `git bx update`
 
-Archive all local branches that have no remote tracking branch configured. Useful as a regular cleanup step before deleting stale branches.
+Archive all local branches that have no remote tracking branch configured.
 
 ```bash
 git bx update
@@ -161,6 +133,8 @@ git bx update
 ```
 
 Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches whose upstream was deleted on the remote (shown as `[gone]` in `git branch -vv`) are archived.
+
+Run `git bx prune` to delete the archived branches from your local repo.
 
 ---
 
@@ -193,8 +167,6 @@ If you are currently checked out on an archived branch, it is skipped with a not
 ```bash
 git bx prune --force
 ```
-
-A typical workflow is `git bx update` followed by `git bx prune` — archive first, then delete in one step.
 
 ---
 
@@ -262,6 +234,32 @@ The branch cannot be restored. You can remove it with: git bx remove feature/my-
 ```
 
 If a local branch with the same name already exists, the command exits with an error rather than overwriting it.
+
+---
+
+### `git bx add <branch>`
+
+Archive a single branch manually. Stores its name and current HEAD SHA.
+
+```bash
+git bx add feature/my-feature
+# Archived: feature/my-feature at a1b2c3d4
+```
+
+If the branch is already in the archive, this updates its record to the current HEAD.
+
+---
+
+### `git bx remove <branch>`
+
+Remove a branch from the archive.
+
+```bash
+git bx remove feature/my-feature
+# Removed: feature/my-feature
+```
+
+This does not delete the local branch — only removes it from the archive.
 
 ---
 
@@ -355,46 +353,7 @@ Requires `both` storage to be enabled.
 
 ---
 
-### `git bx help`
-
-Print the built-in usage summary.
-
-```bash
-git bx help
-git bx --help
-git bx -h
-```
-
----
-
-## Configuration
-
-All settings are managed via `git config`. They can be set per-repo or globally.
-
-### `bx.storage`
-
-Controls which storage backend(s) are used.
-
-```bash
-git config bx.storage both    # default
-git config bx.storage file
-git config bx.storage refs
-```
-
-| Value | Description |
-|---|---|
-| `both` | Use both backends simultaneously. Recommended default. |
-| `file` | Plain text `.gitarchive` file only. |
-| `refs` | Git refs under `refs/bx/` only. |
-
-### `bx.file`
-
-Path to the archive file, relative to the repository root. Default: `.gitarchive`.
-
-```bash
-git config bx.file .git/bx-archive   # keep it out of the working tree
-git config bx.file my-archive.txt
-```
+Run `git bx help` (or `--help`, `-h`) to print the built-in usage summary at any time.
 
 ---
 
@@ -442,6 +401,37 @@ Uses both backends for every operation. Writes go to both; reads prefer refs and
 Each backend covers the other's weakness:
 - Refs protect commits from gc; file provides portability and human-readability
 - If you commit `.gitarchive` to the repo, you get automatic remote sync for free — no need to use `git bx push/pull`
+
+---
+
+## Configuration
+
+All settings are managed via `git config`. They can be set per-repo or globally.
+
+### `bx.storage`
+
+Controls which storage backend(s) are used.
+
+```bash
+git config bx.storage both    # default
+git config bx.storage file
+git config bx.storage refs
+```
+
+| Value | Description |
+|---|---|
+| `both` | Use both backends simultaneously. Recommended default. |
+| `file` | Plain text `.gitarchive` file only. |
+| `refs` | Git refs under `refs/bx/` only. |
+
+### `bx.file`
+
+Path to the archive file, relative to the repository root. Default: `.gitarchive`.
+
+```bash
+git config bx.file .git/bx-archive   # keep it out of the working tree
+git config bx.file my-archive.txt
+```
 
 ---
 
@@ -509,9 +499,14 @@ echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 
 ## Notes
 
-- `git bx update` detects branches to archive by checking whether the upstream tracking ref exists locally via `git rev-parse --verify`. If `%(upstream)` (the full ref path, e.g. `refs/remotes/origin/branch`) resolves to nothing, the branch is archived. This handles both branches that never had a remote and branches whose remote was deleted (after `git fetch --prune`).
 - `git bx add` on an already-archived branch updates the record to the current HEAD — it does not duplicate the entry.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
+
+---
+
+## Internals
+
+Implementation details, design decisions, and architectural notes are in [INTERNALS.md](INTERNALS.md).
 
 ---
 
