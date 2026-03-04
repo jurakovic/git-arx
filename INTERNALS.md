@@ -2,11 +2,13 @@
 
 Implementation details, design decisions, and architectural notes for contributors and maintainers.
 
+For end-user documentation, see [README.md](README.md).
+
 ---
 
 ## Overview
 
-`git-bx` is a single self-contained bash script (~330 lines). There are no dependencies beyond git and bash 4+. The script is structured in four sections separated by comment headers:
+`git-bx` is a single self-contained bash script (~330 lines). There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
 
 ```
 # --- CONFIG HELPERS ---
@@ -21,9 +23,21 @@ All commands go through an internal abstraction layer and never touch storage di
 
 ---
 
-## Why a Bash Script
+## File Structure
 
-The README originally described this as "a bash script added as a git alias". That framing was kept because:
+```
+git-bx           Single executable bash script — the entire implementation
+install.sh       Installs git-bx to PATH and sets the git alias
+test.sh          Test suite
+.gitattributes   Enforces LF line endings for git-bx and install.sh on Windows checkout
+README.md        End-user documentation
+INTERNALS.md     This file
+LICENSE          MIT License
+```
+
+---
+
+## Why a Bash Script
 
 - No install dependencies — bash and git are already present everywhere this tool would be used
 - Git aliases with `!` prefix (`git config alias.bx '!git-bx'`) invoke external scripts on `$PATH` natively
@@ -50,6 +64,28 @@ This is important for a tool that writes to storage — silent failures would co
 - `git cat-file -e "$sha"` — used for existence checks, returns 1 if the object is missing. Wrapped in `if ! ...`.
 - `git update-ref -d` — used when deleting refs that may not exist. Followed by `|| true`.
 - `(( counter++ ))` — arithmetic `(( expr ))` returns 1 when the expression evaluates to 0. Use `counter=$(( counter + 1 ))` instead.
+
+---
+
+## Entry Point and Dispatch
+
+```bash
+main() {
+    _bx_require_git
+    BX_GIT_ROOT=$(_bx_git_root)
+    ...
+}
+```
+
+`BX_GIT_ROOT` is set once at startup and used by `_bx_config_file()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git bx list` works correctly regardless of which subdirectory the user is in when they run it.
+
+Commands that don't apply to the configured storage call `_bx_require_storage` at the top of their function, which prints a descriptive error and exits:
+
+```
+git-bx: this command requires refs storage (current: file)
+```
+
+Unknown commands print an error referencing `git bx help`.
 
 ---
 
@@ -172,42 +208,27 @@ This is also how the `both` backend can achieve fully automatic remote sync with
 
 ---
 
-## The `sync` Command
+## Command Notes
 
-`sync` is only meaningful with `both` storage, since it reconciles two backends that can theoretically drift.
+### `bx update` and `bx status`
 
-### When Drift Happens
+Both commands use the same upstream-detection logic:
 
-In normal usage, drift should not occur — every write operation hits both backends atomically (within the script). Drift can arise from:
-
-1. Someone manually edits `.gitarchive` with a text editor
-2. Someone manually creates/deletes refs with raw git commands
-3. A script crash between the file write and the ref write
-4. `git bx pull` without `both` storage (updates refs but not file)
-
-### Union Merge Algorithm
-
-```
-for each branch in (refs ∪ file):
-    refs-only → write to file
-    file-only → write to refs
-    both, same SHA → no-op
-    both, different SHA → conflict
+```bash
+git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/
 ```
 
-Non-conflicting entries are always processed. A conflict does not block other entries from being synced. After processing all entries, if any conflicts occurred, `sync` exits with status 1.
+`%(upstream)` outputs the full ref path of the configured upstream (e.g. `refs/remotes/origin/main`). If no upstream is configured, the field is empty. A branch is a candidate for archiving if the upstream field is empty (never had a remote) or `git rev-parse --verify "$upstream_ref"` fails (upstream configured but the tracking ref no longer exists locally).
 
-### `--check` Flag
+This approach is more robust than checking `%(upstream:track)` for the string `[gone]` because:
+- `[gone]` can vary by git version or locale
+- The ref-existence check is a direct, binary fact about the object store
 
-Runs the same comparison logic but prints diffs instead of writing. Output lines are prefixed with `refs-only:`, `file-only:`, or `CONFLICT:`. No storage is touched.
+Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches. Using `%(upstream)` (the full ref) and checking whether that ref resolves correctly handles both the "never had a remote" and "remote was deleted" cases.
 
-### `--force-file` / `--force-refs`
+`bx update` writes the archive for each candidate. `bx status` runs the same detection but only prints the branch name and author — nothing is written.
 
-When a SHA conflict is detected and a force flag is present, the designated backend is treated as the source of truth and the other is overwritten. This is an escape hatch for the rare case where the user knows which side is correct.
-
----
-
-## `bx log` — Argument Passthrough
+### `bx log` — Argument Passthrough
 
 ```bash
 cmd_log() {
@@ -222,9 +243,7 @@ cmd_log() {
 
 `exec` is intentionally not used here. On Windows/MINGW64, `exec` does not properly transfer the pipe file descriptor to the replacement process, so git detects a terminal instead of a pipe, opens the pager, and the output never reaches the caller. A plain `git log` call avoids this and behaves correctly on all platforms.
 
----
-
-## `bx checkout` — gc Detection
+### `bx checkout` — gc Detection
 
 Before attempting to restore, the script checks whether the commit still exists:
 
@@ -236,60 +255,34 @@ fi
 
 `git cat-file -e <object>` exits 0 if the object exists in the object store, non-zero otherwise. It does not print anything. This is the correct low-level check — it works for any object type (commit, tree, blob) and does not require the object to be reachable.
 
----
+### `bx sync` — Union Merge Algorithm
 
-## `bx update` — Detecting Branches Without Upstream
+`sync` is only meaningful with `both` storage, since it reconciles two backends that can theoretically drift.
 
-```bash
-git for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads/
-```
+**When drift happens:**
 
-`%(upstream:short)` outputs the configured upstream tracking branch (e.g. `origin/main`). If no upstream is configured, the field is empty. This correctly identifies:
+In normal usage, drift should not occur — every write operation hits both backends atomically (within the script). Drift can arise from:
 
-- Branches that were always local and never had a remote
-- Branches that had a remote which was subsequently deleted (the upstream config is cleared when the remote ref is pruned)
+1. Someone manually edits `.gitarchive` with a text editor
+2. Someone manually creates/deletes refs with raw git commands
+3. A script crash between the file write and the ref write
+4. `git bx pull` without `both` storage (updates refs but not file)
 
-Branches are skipped only if their upstream tracking ref **exists locally**. The format reads two tab-delimited fields: `branch` and `upstream_ref` (`%(upstream)` — the full ref path, e.g. `refs/remotes/origin/main`). A branch is archived if the upstream ref is empty (no upstream configured) or `git rev-parse --verify "$upstream_ref"` fails (upstream configured but the tracking ref doesn't exist locally).
-
-This approach is more robust than checking `%(upstream:track)` for the string `[gone]` because:
-- `[gone]` can vary by git version or locale
-- The ref-existence check is a direct, binary fact about the object store
-
-Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches. Using `%(upstream)` (the full ref) and checking whether that ref resolves correctly handles both the "never had a remote" and "remote was deleted" cases.
-
----
-
-## Entry Point and Dispatch
-
-```bash
-main() {
-    _bx_require_git
-    BX_GIT_ROOT=$(_bx_git_root)
-    ...
-}
-```
-
-`BX_GIT_ROOT` is set once at startup and used by `_bx_config_file()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git bx list` works correctly regardless of which subdirectory the user is in when they run it.
-
-Commands that don't apply to the configured storage call `_bx_require_storage` at the top of their function, which prints a descriptive error and exits:
+**Algorithm:**
 
 ```
-git-bx: this command requires refs storage (current: file)
+for each branch in (refs ∪ file):
+    refs-only → write to file
+    file-only → write to refs
+    both, same SHA → no-op
+    both, different SHA → conflict
 ```
 
-Unknown commands print an error referencing `git bx help`.
+Non-conflicting entries are always processed. A conflict does not block other entries from being synced. After processing all entries, if any conflicts occurred, `sync` exits with status 1.
 
----
+**`--check`:** Runs the same comparison logic but prints diffs instead of writing. Output lines are prefixed with `refs-only:`, `file-only:`, or `CONFLICT:`. No storage is touched.
 
-## File Structure
-
-```
-git-bx           Single executable bash script — the entire implementation
-install.sh       Installs git-bx to PATH and sets the git alias
-.gitattributes   Enforces LF line endings for git-bx and install.sh on Windows checkout
-README.md        End-user documentation
-INTERNALS.md     This file
-```
+**`--force-file` / `--force-refs`:** When a SHA conflict is detected and a force flag is present, the designated backend is treated as the source of truth and the other is overwritten. This is an escape hatch for the rare case where the user knows which side is correct.
 
 ---
 
