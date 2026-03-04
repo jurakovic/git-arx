@@ -6,6 +6,24 @@ Invoked as `git bx <command>` via a git alias.
 
 ---
 
+## Why git-bx?
+
+Every developer eventually accumulates a graveyard of local branches — finished features, abandoned experiments, hotfixes from six months ago. You want to clean them up, but deleting a branch feels permanent. What if you need that commit again? So you leave them. Weeks later you have 40 branches and `git branch` is a wall of noise.
+
+The usual answer is "just use `git reflog`" — but reflog is per-machine, expires after 90 days by default, gives you no branch names, and requires you to remember roughly when you were on that branch.
+
+**Who this is for:**
+
+- **Solo developers** who context-switch between many features and want a clean working tree without anxiety. Archive and delete freely, restore if you ever need to go back.
+- **Teams on shared repos** where you don't always know whose branch is whose. `git bx status` shows the committer, so you can skip archiving a colleague's branch that somehow ended up on your machine.
+- **Anyone doing periodic repo hygiene.** The whole workflow is three commands: `git bx status` to review, `git bx update` to archive, `git bx prune` to delete. Takes 30 seconds.
+
+**Why not just tag the tip commit?** You could — but then you need to remember to do it before deleting, name it something sensible, and maintain your own tagging convention. `git-bx` does this automatically for all branches at once and keeps a searchable list.
+
+**Why not GitHub/GitLab's "restore branch" button?** That only works if the branch was ever pushed. Local-only work — experiments, WIP commits, half-baked ideas — never touches the remote. Those are exactly the branches most worth archiving.
+
+---
+
 ## Installation
 
 ```bash
