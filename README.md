@@ -56,6 +56,9 @@ The bash 4+ requirement comes from `declare -A` (associative arrays). On stock m
 ## Quick Start
 
 ```bash
+# Preview which branches would be archived (with author)
+git bx status
+
 # Archive all local branches that have no remote tracking branch
 git bx update
 
@@ -102,6 +105,23 @@ This does not delete the local branch — only removes it from the archive.
 
 ---
 
+### `git bx status`
+
+Show which local branches would be archived by `git bx update` — branches with no remote tracking branch — along with their last committer. Nothing is written.
+
+```bash
+git bx status
+# BRANCH                                   AUTHOR
+# ------                                   ------
+# feature/old-idea                         Alice Smith
+# fix/quick-hack                           Bob Jones
+# 2 branch(es) would be archived by "git bx update".
+```
+
+Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours.
+
+---
+
 ### `git bx update`
 
 Archive all local branches that have no remote tracking branch configured. Useful as a regular cleanup step before deleting stale branches.
@@ -114,20 +134,6 @@ git bx update
 ```
 
 Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches whose upstream was deleted on the remote (shown as `[gone]` in `git branch -vv`) are archived.
-
-**Options:**
-
-| Option | Description |
-|---|---|
-| `--dry-run` | Show which branches would be archived (with author) without writing anything. |
-
-```bash
-git bx update --dry-run
-# Archived: feature/old-idea (Alice Smith)
-# Archived: fix/quick-hack (Bob Jones)
-# Done. Archived 2 branch(es).
-# (dry run — no changes written)
-```
 
 ---
 

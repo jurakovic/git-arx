@@ -166,30 +166,25 @@ test_update() {
     section "update"
     reset_archive
 
-    # --dry-run: shows branches without writing
+    # status: shows candidates without writing
     local dry_out
-    dry_out=$("$BX" update --dry-run 2>&1)
-    if printf '%s' "$dry_out" | grep -qF "Archived: feature/alpha"; then
-        pass "update: dry-run shows archived lines"
+    dry_out=$("$BX" status 2>&1)
+    if printf '%s' "$dry_out" | grep -qF "feature/alpha"; then
+        pass "status: shows branch with no upstream"
     else
-        fail "update: dry-run shows archived lines"
+        fail "status: shows branch with no upstream"
     fi
-    if printf '%s' "$dry_out" | grep -qF "Archived 3 branch(es)"; then
-        pass "update: dry-run reports correct count"
+    if printf '%s' "$dry_out" | grep -qF "3 branch(es) would be archived"; then
+        pass "status: reports correct count"
     else
-        fail "update: dry-run reports correct count"
-    fi
-    if printf '%s' "$dry_out" | grep -qF "(dry run — no changes written)"; then
-        pass "update: dry-run shows indicator"
-    else
-        fail "update: dry-run shows indicator"
+        fail "status: reports correct count"
     fi
     if [[ ! -f .gitarchive ]]; then
-        pass "update: dry-run does not write archive"
+        pass "status: does not write archive"
     else
-        fail "update: dry-run does not write archive"
+        fail "status: does not write archive"
     fi
-    assert_out "update: dry-run shows author" "Test" "$BX" update --dry-run
+    assert_out "status: shows author" "Test" "$BX" status
 
     local out
     out=$("$BX" update 2>&1)
@@ -198,7 +193,7 @@ test_update() {
     else
         fail "update: archives branch with no upstream"
     fi
-    assert_out "update: dry-run shows author (2nd call)" "Test" "$BX" update --dry-run
+    assert_out "status: shows author (2nd call)" "Test" "$BX" status
     if printf '%s' "$out" | grep -qF "Archived 3 branch(es)"; then
         pass "update: reports correct count"
     else

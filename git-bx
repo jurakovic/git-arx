@@ -234,10 +234,9 @@ cmd_remove() {
 }
 
 cmd_update() {
-    local archived=0 dry_run=0
+    local archived=0
     for arg in "$@"; do
         case "$arg" in
-            --dry-run) dry_run=1 ;;
             *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
@@ -250,18 +249,35 @@ cmd_update() {
         local sha date
         sha=$(git rev-parse "refs/heads/${branch}")
         date=$(git log -1 --format=%aI "refs/heads/${branch}")
-        if [[ $dry_run -eq 0 ]]; then
-            _bx_write "$branch" "$sha" "$date"
-            printf 'Archived: %s\n' "$branch"
-        else
-            local author
-            author=$(git log -1 --format=%an "refs/heads/${branch}")
-            printf 'Archived: %s (%s)\n' "$branch" "$author"
-        fi
+        _bx_write "$branch" "$sha" "$date"
+        printf 'Archived: %s\n' "$branch"
         archived=$(( archived + 1 ))
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
     printf 'Done. Archived %d branch(es).\n' "$archived"
-    [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true
+}
+
+cmd_status() {
+    local -a lines=()
+    while IFS=$'\t' read -r branch upstream_ref; do
+        if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
+            continue
+        fi
+        local author
+        author=$(git log -1 --format=%an "refs/heads/${branch}")
+        lines+=("$(printf '%-40s %s' "$branch" "$author")")
+    done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
+
+    if [[ ${#lines[@]} -eq 0 ]]; then
+        printf 'No branches to archive.\n'
+        return 0
+    fi
+
+    printf '%-40s %s\n' "BRANCH" "AUTHOR"
+    printf '%-40s %s\n' "------" "------"
+    for line in "${lines[@]}"; do
+        printf '%s\n' "$line"
+    done
+    printf '%d branch(es) would be archived by "git bx update".\n' "${#lines[@]}"
 }
 
 cmd_list() {
@@ -653,7 +669,8 @@ USAGE
 COMMANDS
   add <branch>                  Archive a single branch
   remove <branch>               Remove a branch from the archive
-  update [--dry-run]            Archive all local branches with no upstream
+  status                        Show branches that would be archived by update
+  update                        Archive all local branches with no upstream
   list [--sort=name|date]       List archived branches
        [--order=asc|desc]
        [--storage=file|refs|both]
@@ -705,6 +722,7 @@ main() {
     case "$cmd" in
         add)      cmd_add "$@" ;;
         remove)   cmd_remove "$@" ;;
+        status)   cmd_status "$@" ;;
         update)   cmd_update "$@" ;;
         list)     cmd_list "$@" ;;
         log)      cmd_log "$@" ;;
