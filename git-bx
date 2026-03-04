@@ -234,20 +234,36 @@ cmd_remove() {
 }
 
 cmd_update() {
-    local archived=0
+    local archived=0 dry_run=0
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run) dry_run=1 ;;
+            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+        esac
+    done
+
     while IFS=$'\t' read -r branch upstream_ref; do
         # Skip if upstream ref exists locally (live remote tracking branch)
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
-        local sha date
+        local sha date author
         sha=$(git rev-parse "refs/heads/${branch}")
         date=$(git log -1 --format=%aI "refs/heads/${branch}")
-        _bx_write "$branch" "$sha" "$date"
-        printf 'Archived: %s\n' "$branch"
+        author=$(git log -1 --format=%an "refs/heads/${branch}")
+        if [[ $dry_run -eq 1 ]]; then
+            printf 'Would archive: %s (%s)\n' "$branch" "$author"
+        else
+            _bx_write "$branch" "$sha" "$date"
+            printf 'Archived: %s (%s)\n' "$branch" "$author"
+        fi
         archived=$(( archived + 1 ))
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
-    printf 'Done. Archived %d branch(es).\n' "$archived"
+    if [[ $dry_run -eq 1 ]]; then
+        printf 'Done. Would archive %d branch(es).\n' "$archived"
+    else
+        printf 'Done. Archived %d branch(es).\n' "$archived"
+    fi
 }
 
 cmd_list() {
@@ -295,10 +311,12 @@ cmd_list() {
     sorted=$(printf '%s\n' "$entries" | sort $sort_flag -k"${sort_field}")
 
     # Print header and table
-    printf '%-40s %-9s %s\n' "BRANCH" "SHA" "DATE"
-    printf '%-40s %-9s %s\n' "------" "---" "----"
+    printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR"
+    printf '%-40s %-9s %-12s %s\n' "------" "---" "----" "------"
     while IFS=' ' read -r branch sha date rest; do
-        printf '%-40s %-9s %s\n' "$branch" "${sha:0:8}" "${date:0:10}"
+        local author
+        author=$(git log -1 --format=%an "$sha" 2>/dev/null || printf '(gc)')
+        printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "$author"
     done <<< "$sorted"
 }
 
@@ -626,7 +644,7 @@ USAGE
 COMMANDS
   add <branch>                  Archive a single branch
   remove <branch>               Remove a branch from the archive
-  update                        Archive all local branches with no upstream
+  update [--dry-run]            Archive all local branches with no upstream
   list [--sort=name|date]       List archived branches
        [--order=asc|desc]
        [--storage=file|refs|both]

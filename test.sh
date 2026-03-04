@@ -148,8 +148,10 @@ test_list() {
     "$BX" add fix/gamma     > /dev/null
 
     assert_out   "list: shows header"              "BRANCH"           "$BX" list
+    assert_out   "list: shows author header"       "AUTHOR"           "$BX" list
     assert_out   "list: shows archived branch"     "feature/alpha"    "$BX" list
     assert_out   "list: shows all branches"        "fix/gamma"        "$BX" list
+    assert_out   "list: shows author name"         "Test"             "$BX" list
     assert_ok    "list: --sort=name"               "$BX" list --sort=name
     assert_ok    "list: --sort=date"               "$BX" list --sort=date
     assert_ok    "list: --order=asc"               "$BX" list --order=asc
@@ -164,6 +166,26 @@ test_update() {
     section "update"
     reset_archive
 
+    # --dry-run: shows branches without writing
+    local dry_out
+    dry_out=$("$BX" update --dry-run 2>&1)
+    if printf '%s' "$dry_out" | grep -qF "Would archive: feature/alpha"; then
+        pass "update: dry-run shows would-archive"
+    else
+        fail "update: dry-run shows would-archive"
+    fi
+    if printf '%s' "$dry_out" | grep -qF "Would archive 3 branch(es)"; then
+        pass "update: dry-run reports correct count"
+    else
+        fail "update: dry-run reports correct count"
+    fi
+    if [[ ! -f .gitarchive ]]; then
+        pass "update: dry-run does not write archive"
+    else
+        fail "update: dry-run does not write archive"
+    fi
+    assert_out "update: dry-run shows author" "Test" "$BX" update --dry-run
+
     local out
     out=$("$BX" update 2>&1)
     if printf '%s' "$out" | grep -qF "Archived: feature/alpha"; then
@@ -171,6 +193,7 @@ test_update() {
     else
         fail "update: archives branch with no upstream"
     fi
+    assert_out "update: shows author on archive" "Test" "$BX" update
     if printf '%s' "$out" | grep -qF "Archived 3 branch(es)"; then
         pass "update: reports correct count"
     else

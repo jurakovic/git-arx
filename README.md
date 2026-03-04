@@ -108,12 +108,25 @@ Archive all local branches that have no remote tracking branch configured. Usefu
 
 ```bash
 git bx update
-# Archived: feature/old-idea
-# Archived: fix/quick-hack
+# Archived: feature/old-idea (Alice Smith)
+# Archived: fix/quick-hack (Bob Jones)
 # Done. Archived 2 branch(es).
 ```
 
 Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches whose upstream was deleted on the remote (shown as `[gone]` in `git branch -vv`) are archived.
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--dry-run` | Show which branches would be archived (with author) without writing anything. |
+
+```bash
+git bx update --dry-run
+# Would archive: feature/old-idea (Alice Smith)
+# Would archive: fix/quick-hack (Bob Jones)
+# Done. Would archive 2 branch(es).
+```
 
 ---
 
@@ -157,10 +170,10 @@ List all archived branches.
 
 ```bash
 git bx list
-# BRANCH                                   SHA       DATE
-# ------                                   ---       ----
-# feature/my-feature                       a1b2c3d4  2025-11-15
-# fix/old-bug                              deadbeef  2025-10-01
+# BRANCH                                   SHA       DATE         AUTHOR
+# ------                                   ---       ----         ------
+# feature/my-feature                       a1b2c3d4  2025-11-15   Alice Smith
+# fix/old-bug                              deadbeef  2025-10-01   Bob Jones
 ```
 
 **Options:**
