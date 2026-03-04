@@ -2,21 +2,35 @@
 set -euo pipefail
 
 # install.sh — Install git-bx and configure the git alias
+#
+# Local install (after git clone):
+#   bash install.sh
+#
+# Remote install (no clone needed):
+#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash
+#
+# Custom install path:
+#   bash install.sh /usr/local/bin
+#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash -s -- /usr/local/bin
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RAW_URL="https://raw.githubusercontent.com/jurakovic/git-bx/master/git-bx"
+
+# Locate git-bx: check alongside this script first, then download
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || pwd)"
 SCRIPT_SRC="$SCRIPT_DIR/git-bx"
+TMPFILE=""
 
 if [[ ! -f "$SCRIPT_SRC" ]]; then
-    printf 'Error: git-bx script not found at %s\n' "$SCRIPT_SRC" >&2
-    exit 1
+    printf 'Downloading git-bx...\n'
+    TMPFILE="$(mktemp)"
+    curl -fsSL "$RAW_URL" -o "$TMPFILE"
+    SCRIPT_SRC="$TMPFILE"
 fi
 
 # Determine install directory
 if [[ "${MSYSTEM:-}" == "MINGW64" || "${MSYSTEM:-}" == "MINGW32" || "${OS:-}" == "Windows_NT" ]]; then
-    # MINGW64 / Git Bash on Windows
     INSTALL_DIR="$HOME/bin"
 else
-    # Linux / macOS
     INSTALL_DIR="$HOME/.local/bin"
 fi
 
@@ -31,10 +45,15 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
     mkdir -p "$INSTALL_DIR"
 fi
 
-# Copy script
+# Install
 cp "$SCRIPT_SRC" "$INSTALL_DIR/git-bx"
 chmod +x "$INSTALL_DIR/git-bx"
 printf 'Installed: %s/git-bx\n' "$INSTALL_DIR"
+
+# Cleanup temp file if we downloaded
+if [[ -n "$TMPFILE" ]]; then
+    rm -f "$TMPFILE"
+fi
 
 # Check if install dir is on PATH
 if ! printf '%s' "$PATH" | tr ':' '\n' | grep -qxF "$INSTALL_DIR"; then

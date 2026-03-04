@@ -26,11 +26,19 @@ The usual answer is "just use `git reflog`" — but reflog is per-machine, expir
 
 ## Installation
 
+**With curl (no clone needed):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash
+```
+
+**From a local clone:**
+
 ```bash
 bash install.sh
 ```
 
-This copies `git-bx` to `~/bin` (Windows/MINGW64) or `~/.local/bin` (Linux/macOS), makes it executable, and sets the global git alias:
+Both methods copy `git-bx` to `~/bin` (Windows/MINGW64) or `~/.local/bin` (Linux/macOS), make it executable, and set the global git alias:
 
 ```
 git config --global alias.bx '!git-bx'
@@ -42,6 +50,7 @@ If the install directory is not on your `PATH`, the script will tell you what to
 
 ```bash
 bash install.sh /usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash -s -- /usr/local/bin
 ```
 
 **Manual setup (no install script):**
