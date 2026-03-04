@@ -503,3 +503,13 @@ echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 - `git bx update` detects branches to archive by checking whether the upstream tracking ref exists locally via `git rev-parse --verify`. If `%(upstream)` (the full ref path, e.g. `refs/remotes/origin/branch`) resolves to nothing, the branch is archived. This handles both branches that never had a remote and branches whose remote was deleted (after `git fetch --prune`).
 - `git bx add` on an already-archived branch updates the record to the current HEAD — it does not duplicate the entry.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
+
+---
+
+## License
+
+MIT License — see [LICENSE](LICENSE).
+
+---
+
+*Implemented with [Claude Code](https://claude.ai/claude-code). The concept, design, and all product decisions are my own.*
