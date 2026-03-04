@@ -108,8 +108,8 @@ Archive all local branches that have no remote tracking branch configured. Usefu
 
 ```bash
 git bx update
-# Archived: feature/old-idea (Alice Smith)
-# Archived: fix/quick-hack (Bob Jones)
+# Archived: feature/old-idea
+# Archived: fix/quick-hack
 # Done. Archived 2 branch(es).
 ```
 
@@ -171,10 +171,10 @@ List all archived branches.
 
 ```bash
 git bx list
-# BRANCH                                   SHA       DATE         AUTHOR
-# ------                                   ---       ----         ------
-# feature/my-feature                       a1b2c3d4  2025-11-15   Alice Smith
-# fix/old-bug                              deadbeef  2025-10-01   Bob Jones
+# BRANCH                                   SHA       DATE
+# ------                                   ---       ----
+# feature/my-feature                       a1b2c3d4  2025-11-15
+# fix/old-bug                              deadbeef  2025-10-01
 ```
 
 **Options:**
@@ -186,11 +186,13 @@ git bx list
 | `--order=asc` | Ascending order |
 | `--order=desc` | Descending order (default) |
 | `--storage=file\|refs\|both` | Show only branches from the given backend (default: configured storage) |
+| `--author` | Add an AUTHOR column showing the last committer on each branch |
 
 ```bash
 git bx list --sort=name --order=asc
 git bx list --storage=refs
 git bx list --storage=file
+git bx list --author
 ```
 
 ---

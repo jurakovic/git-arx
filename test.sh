@@ -148,10 +148,10 @@ test_list() {
     "$BX" add fix/gamma     > /dev/null
 
     assert_out   "list: shows header"              "BRANCH"           "$BX" list
-    assert_out   "list: shows author header"       "AUTHOR"           "$BX" list
     assert_out   "list: shows archived branch"     "feature/alpha"    "$BX" list
     assert_out   "list: shows all branches"        "fix/gamma"        "$BX" list
-    assert_out   "list: shows author name"         "Test"             "$BX" list
+    assert_out   "list: --author shows header"     "AUTHOR"           "$BX" list --author
+    assert_out   "list: --author shows name"       "Test"             "$BX" list --author
     assert_ok    "list: --sort=name"               "$BX" list --sort=name
     assert_ok    "list: --sort=date"               "$BX" list --sort=date
     assert_ok    "list: --order=asc"               "$BX" list --order=asc
@@ -198,7 +198,7 @@ test_update() {
     else
         fail "update: archives branch with no upstream"
     fi
-    assert_out "update: shows author on archive" "Test" "$BX" update
+    assert_out "update: dry-run shows author (2nd call)" "Test" "$BX" update --dry-run
     if printf '%s' "$out" | grep -qF "Archived 3 branch(es)"; then
         pass "update: reports correct count"
     else

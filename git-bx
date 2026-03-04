@@ -247,14 +247,17 @@ cmd_update() {
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
-        local sha date author
+        local sha date
         sha=$(git rev-parse "refs/heads/${branch}")
         date=$(git log -1 --format=%aI "refs/heads/${branch}")
-        author=$(git log -1 --format=%an "refs/heads/${branch}")
         if [[ $dry_run -eq 0 ]]; then
             _bx_write "$branch" "$sha" "$date"
+            printf 'Archived: %s\n' "$branch"
+        else
+            local author
+            author=$(git log -1 --format=%an "refs/heads/${branch}")
+            printf 'Archived: %s (%s)\n' "$branch" "$author"
         fi
-        printf 'Archived: %s (%s)\n' "$branch" "$author"
         archived=$(( archived + 1 ))
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
     printf 'Done. Archived %d branch(es).\n' "$archived"
@@ -262,7 +265,7 @@ cmd_update() {
 }
 
 cmd_list() {
-    local sort_by="date" order="desc" list_storage=""
+    local sort_by="date" order="desc" list_storage="" show_author=0
 
     for arg in "$@"; do
         case "$arg" in
@@ -270,6 +273,7 @@ cmd_list() {
             --sort=date)  sort_by="date" ;;
             --order=asc)  order="asc" ;;
             --order=desc) order="desc" ;;
+            --author)     show_author=1 ;;
             --storage=both|--storage=file|--storage=refs)
                 list_storage="${arg#--storage=}" ;;
             --storage=*)
@@ -306,12 +310,21 @@ cmd_list() {
     sorted=$(printf '%s\n' "$entries" | sort $sort_flag -k"${sort_field}")
 
     # Print header and table
-    printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR"
-    printf '%-40s %-9s %-12s %s\n' "------" "---" "----" "------"
+    if [[ $show_author -eq 1 ]]; then
+        printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR"
+        printf '%-40s %-9s %-12s %s\n' "------" "---" "----" "------"
+    else
+        printf '%-40s %-9s %s\n' "BRANCH" "SHA" "DATE"
+        printf '%-40s %-9s %s\n' "------" "---" "----"
+    fi
     while IFS=' ' read -r branch sha date rest; do
-        local author
-        author=$(git log -1 --format=%an "$sha" 2>/dev/null || printf '(gc)')
-        printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "$author"
+        if [[ $show_author -eq 1 ]]; then
+            local author
+            author=$(git log -1 --format=%an "$sha" 2>/dev/null || printf '(gc)')
+            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "$author"
+        else
+            printf '%-40s %-9s %s\n' "$branch" "${sha:0:8}" "${date:0:10}"
+        fi
     done <<< "$sorted"
 }
 
@@ -644,6 +657,7 @@ COMMANDS
   list [--sort=name|date]       List archived branches
        [--order=asc|desc]
        [--storage=file|refs|both]
+       [--author]
   log <branch> [git-log-flags]  Show commits (delegates to git log)
   checkout <branch>             Restore a branch from the archive
   prune [--force]               Delete local branches that are archived
