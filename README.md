@@ -36,6 +36,23 @@ git config --global alias.bx '!git-bx'
 
 ---
 
+## Compatibility
+
+Requires **bash 4+** and **git**. Works anywhere those are present.
+
+| Environment | Status | Notes |
+|---|---|---|
+| Linux | Supported | bash 4+ is standard |
+| Windows — Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
+| Windows — WSL | Supported | Linux environment |
+| macOS — Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
+| macOS — system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
+| PowerShell / CMD | **Not supported** | No bash runtime |
+
+The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error — install bash via Homebrew and confirm `which bash` points to it.
+
+---
+
 ## Quick Start
 
 ```bash
@@ -445,4 +462,3 @@ echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 - `git bx update` detects branches to archive by checking whether the upstream tracking ref exists locally via `git rev-parse --verify`. If `%(upstream)` (the full ref path, e.g. `refs/remotes/origin/branch`) resolves to nothing, the branch is archived. This handles both branches that never had a remote and branches whose remote was deleted (after `git fetch --prune`).
 - `git bx add` on an already-archived branch updates the record to the current HEAD — it does not duplicate the entry.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
-- The tool requires bash 4+ (for associative arrays). Git for Windows ships with bash 4.4 or later.
