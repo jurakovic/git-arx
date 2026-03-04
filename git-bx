@@ -2,53 +2,53 @@
 set -euo pipefail
 
 # =============================================================================
-# git-bra — BRanch Archiver
+# git-bx — Branch arXiver
 # Archive local git branches that have no remote tracking branch.
-# Usage: git bra <command> [options]
+# Usage: git bx <command> [options]
 # =============================================================================
 
 # --- CONFIG HELPERS ----------------------------------------------------------
 
-_bra_require_git() {
+_bx_require_git() {
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
-        printf 'git-bra: not inside a git repository\n' >&2
+        printf 'git-bx: not inside a git repository\n' >&2
         exit 1
     fi
 }
 
-_bra_git_root() {
+_bx_git_root() {
     git rev-parse --show-toplevel
 }
 
-_bra_config_storage() {
-    git config --get bra.storage 2>/dev/null || printf 'both'
+_bx_config_storage() {
+    git config --get bx.storage 2>/dev/null || printf 'both'
 }
 
-_bra_config_file() {
+_bx_config_file() {
     local filename
-    filename=$(git config --get bra.file 2>/dev/null || printf '.gitarchive')
+    filename=$(git config --get bx.file 2>/dev/null || printf '.gitarchive')
     # Resolve relative to repo root, not $PWD
-    printf '%s/%s' "$BRA_GIT_ROOT" "$filename"
+    printf '%s/%s' "$BX_GIT_ROOT" "$filename"
 }
 
-_bra_require_storage() {
+_bx_require_storage() {
     local required="$1"
     local current
-    current=$(_bra_config_storage)
+    current=$(_bx_config_storage)
     case "$required" in
         refs)
             [[ "$current" == "refs" || "$current" == "both" ]] && return 0
-            printf 'git-bra: this command requires refs storage (current: %s)\n' "$current" >&2
+            printf 'git-bx: this command requires refs storage (current: %s)\n' "$current" >&2
             exit 1
             ;;
         file)
             [[ "$current" == "file" || "$current" == "both" ]] && return 0
-            printf 'git-bra: this command requires file storage (current: %s)\n' "$current" >&2
+            printf 'git-bx: this command requires file storage (current: %s)\n' "$current" >&2
             exit 1
             ;;
         both)
             [[ "$current" == "both" ]] && return 0
-            printf 'git-bra: this command requires both storage backends (current: %s)\n' "$current" >&2
+            printf 'git-bx: this command requires both storage backends (current: %s)\n' "$current" >&2
             exit 1
             ;;
     esac
@@ -56,9 +56,9 @@ _bra_require_storage() {
 
 # --- BACKEND: FILE -----------------------------------------------------------
 
-_bra_file_read() {
+_bx_file_read() {
     local archive
-    archive=$(_bra_config_file)
+    archive=$(_bx_config_file)
     [[ -f "$archive" ]] || return 0
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip blank lines and comment lines
@@ -67,10 +67,10 @@ _bra_file_read() {
     done < "$archive"
 }
 
-_bra_file_write() {
+_bx_file_write() {
     local branch="$1" sha="$2" date="$3"
     local archive tmpfile
-    archive=$(_bra_config_file)
+    archive=$(_bx_config_file)
     tmpfile="${archive}.tmp.$$"
 
     # Start fresh temp file; preserve header comment if archive exists
@@ -84,7 +84,7 @@ _bra_file_write() {
             fi
         done < "$archive"
     else
-        printf '# git-bra archive — do not edit manually\n' > "$tmpfile"
+        printf '# git-bx archive — do not edit manually\n' > "$tmpfile"
     fi
 
     printf '%s %s %s\n' "$branch" "$sha" "$date" >> "$tmpfile"
@@ -94,10 +94,10 @@ _bra_file_write() {
     mv "$tmpfile" "$archive"
 }
 
-_bra_file_delete() {
+_bx_file_delete() {
     local branch="$1"
     local archive tmpfile
-    archive=$(_bra_config_file)
+    archive=$(_bx_config_file)
     [[ -f "$archive" ]] || return 0
     tmpfile="${archive}.tmp.$$"
 
@@ -112,89 +112,89 @@ _bra_file_delete() {
 
 # --- BACKEND: REFS -----------------------------------------------------------
 
-_bra_refs_read() {
-    # %(refname:short) strips "refs/" giving "bra/feature/login"
+_bx_refs_read() {
+    # %(refname:short) strips "refs/" giving "bx/feature/login"
     git for-each-ref \
         --format='%(refname:short) %(objectname) %(creatordate:iso-strict)' \
-        'refs/bra/' \
+        'refs/bx/' \
     | while IFS=' ' read -r refshort sha date rest; do
-        local branch="${refshort#bra/}"
+        local branch="${refshort#bx/}"
         printf '%s %s %s\n' "$branch" "$sha" "$date"
     done
 }
 
-_bra_refs_write() {
+_bx_refs_write() {
     local branch="$1" sha="$2"
-    git update-ref "refs/bra/${branch}" "$sha"
+    git update-ref "refs/bx/${branch}" "$sha"
 }
 
-_bra_refs_delete() {
+_bx_refs_delete() {
     local branch="$1"
-    git update-ref -d "refs/bra/${branch}" 2>/dev/null || true
+    git update-ref -d "refs/bx/${branch}" 2>/dev/null || true
 }
 
 # --- ABSTRACTION LAYER -------------------------------------------------------
 
-_bra_read_all() {
+_bx_read_all() {
     local storage
-    storage=$(_bra_config_storage)
+    storage=$(_bx_config_storage)
     case "$storage" in
-        file) _bra_file_read ;;
-        refs) _bra_refs_read ;;
+        file) _bx_file_read ;;
+        refs) _bx_refs_read ;;
         both)
             # Union merge: refs are primary; supplement with file-only entries
             declare -A seen
             while IFS=' ' read -r branch sha date rest; do
                 seen["$branch"]=1
                 printf '%s %s %s\n' "$branch" "$sha" "$date"
-            done < <(_bra_refs_read)
+            done < <(_bx_refs_read)
             while IFS=' ' read -r branch sha date rest; do
                 if [[ -z "${seen[$branch]+x}" ]]; then
                     printf '%s %s %s\n' "$branch" "$sha" "$date"
                 fi
-            done < <(_bra_file_read)
+            done < <(_bx_file_read)
             ;;
         *)
-            printf 'git-bra: unknown storage type "%s"\n' "$storage" >&2
+            printf 'git-bx: unknown storage type "%s"\n' "$storage" >&2
             exit 1
             ;;
     esac
 }
 
-_bra_write() {
+_bx_write() {
     local branch="$1" sha="$2" date="$3"
     local storage
-    storage=$(_bra_config_storage)
+    storage=$(_bx_config_storage)
     if [[ "$storage" == "file" || "$storage" == "both" ]]; then
-        _bra_file_write "$branch" "$sha" "$date"
+        _bx_file_write "$branch" "$sha" "$date"
     fi
     if [[ "$storage" == "refs" || "$storage" == "both" ]]; then
-        _bra_refs_write "$branch" "$sha"
+        _bx_refs_write "$branch" "$sha"
     fi
 }
 
-_bra_delete() {
+_bx_delete() {
     local branch="$1"
     local storage
-    storage=$(_bra_config_storage)
+    storage=$(_bx_config_storage)
     if [[ "$storage" == "file" || "$storage" == "both" ]]; then
-        _bra_file_delete "$branch"
+        _bx_file_delete "$branch"
     fi
     if [[ "$storage" == "refs" || "$storage" == "both" ]]; then
-        _bra_refs_delete "$branch"
+        _bx_refs_delete "$branch"
     fi
 }
 
-_bra_lookup_branch() {
+_bx_lookup_branch() {
     local branch="$1"
-    _bra_read_all | while IFS=' ' read -r b sha date rest; do
+    _bx_read_all | while IFS=' ' read -r b sha date rest; do
         if [[ "$b" == "$branch" ]]; then
             printf '%s %s\n' "$sha" "$date"
         fi
     done
 }
 
-_bra_sha_exists() {
+_bx_sha_exists() {
     local sha="$1"
     git cat-file -e "$sha" 2>/dev/null
 }
@@ -203,10 +203,10 @@ _bra_sha_exists() {
 
 cmd_add() {
     local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bra add <branch>\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git bx add <branch>\n' >&2; exit 1; }
 
     if ! git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
-        printf 'git-bra: branch "%s" not found in local branches\n' "$branch" >&2
+        printf 'git-bx: branch "%s" not found in local branches\n' "$branch" >&2
         exit 1
     fi
 
@@ -214,22 +214,22 @@ cmd_add() {
     sha=$(git rev-parse "refs/heads/${branch}")
     date=$(git log -1 --format=%aI "refs/heads/${branch}")
 
-    _bra_write "$branch" "$sha" "$date"
+    _bx_write "$branch" "$sha" "$date"
     printf 'Archived: %s at %s\n' "$branch" "${sha:0:8}"
 }
 
 cmd_remove() {
     local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bra remove <branch>\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git bx remove <branch>\n' >&2; exit 1; }
 
     local entry
-    entry=$(_bra_lookup_branch "$branch")
+    entry=$(_bx_lookup_branch "$branch")
     if [[ -z "$entry" ]]; then
-        printf 'git-bra: branch "%s" not found in archive\n' "$branch" >&2
+        printf 'git-bx: branch "%s" not found in archive\n' "$branch" >&2
         exit 1
     fi
 
-    _bra_delete "$branch"
+    _bx_delete "$branch"
     printf 'Removed: %s\n' "$branch"
 }
 
@@ -243,7 +243,7 @@ cmd_update() {
         local sha date
         sha=$(git rev-parse "refs/heads/${branch}")
         date=$(git log -1 --format=%aI "refs/heads/${branch}")
-        _bra_write "$branch" "$sha" "$date"
+        _bx_write "$branch" "$sha" "$date"
         printf 'Archived: %s\n' "$branch"
         archived=$(( archived + 1 ))
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
@@ -262,22 +262,22 @@ cmd_list() {
             --storage=both|--storage=file|--storage=refs)
                 list_storage="${arg#--storage=}" ;;
             --storage=*)
-                printf 'git-bra: invalid --storage value "%s" (use: file, refs, both)\n' "${arg#--storage=}" >&2
+                printf 'git-bx: invalid --storage value "%s" (use: file, refs, both)\n' "${arg#--storage=}" >&2
                 exit 1 ;;
-            *) printf 'git-bra: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
     # Validate that the requested backend is available in the current storage config
     if [[ -n "$list_storage" ]]; then
-        _bra_require_storage "$list_storage"
+        _bx_require_storage "$list_storage"
     fi
 
     local entries
     case "$list_storage" in
-        file) entries=$(_bra_file_read) ;;
-        refs) entries=$(_bra_refs_read) ;;
-        *)    entries=$(_bra_read_all) ;;
+        file) entries=$(_bx_file_read) ;;
+        refs) entries=$(_bx_refs_read) ;;
+        *)    entries=$(_bx_read_all) ;;
     esac
 
     if [[ -z "$entries" ]]; then
@@ -304,22 +304,22 @@ cmd_list() {
 
 cmd_log() {
     local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bra log <branch> [git-log-options...]\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git bx log <branch> [git-log-options...]\n' >&2; exit 1; }
     shift  # remove branch name; remaining "$@" are git log flags
 
     local entry
-    entry=$(_bra_lookup_branch "$branch")
+    entry=$(_bx_lookup_branch "$branch")
     if [[ -z "$entry" ]]; then
-        printf 'git-bra: branch "%s" not found in archive\n' "$branch" >&2
+        printf 'git-bx: branch "%s" not found in archive\n' "$branch" >&2
         exit 1
     fi
 
     local sha
     sha=$(printf '%s' "$entry" | awk '{print $1}')
 
-    if ! _bra_sha_exists "$sha"; then
-        printf 'git-bra: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
-        printf 'The commit history is no longer available. You can remove it with: git bra remove %s\n' "$branch" >&2
+    if ! _bx_sha_exists "$sha"; then
+        printf 'git-bx: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
+        printf 'The commit history is no longer available. You can remove it with: git bx remove %s\n' "$branch" >&2
         exit 1
     fi
 
@@ -328,26 +328,26 @@ cmd_log() {
 
 cmd_checkout() {
     local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bra checkout <branch>\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git bx checkout <branch>\n' >&2; exit 1; }
 
     local entry
-    entry=$(_bra_lookup_branch "$branch")
+    entry=$(_bx_lookup_branch "$branch")
     if [[ -z "$entry" ]]; then
-        printf 'git-bra: branch "%s" not found in archive\n' "$branch" >&2
+        printf 'git-bx: branch "%s" not found in archive\n' "$branch" >&2
         exit 1
     fi
 
     local sha
     sha=$(printf '%s' "$entry" | awk '{print $1}')
 
-    if ! _bra_sha_exists "$sha"; then
-        printf 'git-bra: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
-        printf 'The branch cannot be restored. You can remove it with: git bra remove %s\n' "$branch" >&2
+    if ! _bx_sha_exists "$sha"; then
+        printf 'git-bx: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
+        printf 'The branch cannot be restored. You can remove it with: git bx remove %s\n' "$branch" >&2
         exit 1
     fi
 
     if git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
-        printf 'git-bra: a local branch named "%s" already exists\n' "$branch" >&2
+        printf 'git-bx: a local branch named "%s" already exists\n' "$branch" >&2
         exit 1
     fi
 
@@ -356,7 +356,7 @@ cmd_checkout() {
 }
 
 cmd_merge() {
-    _bra_require_storage file
+    _bx_require_storage file
 
     local file1="" file2="" output=""
     while [[ $# -gt 0 ]]; do
@@ -365,7 +365,7 @@ cmd_merge() {
             *)
                 if [[ -z "$file1" ]]; then file1="$1"
                 elif [[ -z "$file2" ]]; then file2="$1"
-                else printf 'git-bra: unexpected argument "%s"\n' "$1" >&2; exit 1
+                else printf 'git-bx: unexpected argument "%s"\n' "$1" >&2; exit 1
                 fi
                 ;;
         esac
@@ -373,10 +373,10 @@ cmd_merge() {
     done
 
     [[ -z "$file1" || -z "$file2" || -z "$output" ]] && {
-        printf 'Usage: git bra merge <file1> <file2> -o <output>\n' >&2; exit 1
+        printf 'Usage: git bx merge <file1> <file2> -o <output>\n' >&2; exit 1
     }
-    [[ -f "$file1" ]] || { printf 'git-bra: file not found: %s\n' "$file1" >&2; exit 1; }
-    [[ -f "$file2" ]] || { printf 'git-bra: file not found: %s\n' "$file2" >&2; exit 1; }
+    [[ -f "$file1" ]] || { printf 'git-bx: file not found: %s\n' "$file1" >&2; exit 1; }
+    [[ -f "$file2" ]] || { printf 'git-bx: file not found: %s\n' "$file2" >&2; exit 1; }
 
     declare -A map1 map2
     local line branch sha date
@@ -393,7 +393,7 @@ cmd_merge() {
 
     local merged=0 conflicts=0
     local tmpfile="${output}.tmp.$$"
-    printf '# git-bra archive — merged from %s and %s\n' "$file1" "$file2" > "$tmpfile"
+    printf '# git-bx archive — merged from %s and %s\n' "$file1" "$file2" > "$tmpfile"
 
     # Collect all branch names
     declare -A all_branches
@@ -428,7 +428,7 @@ cmd_merge() {
 }
 
 cmd_sync() {
-    _bra_require_storage both
+    _bx_require_storage both
 
     local check=0 force=""
     for arg in "$@"; do
@@ -436,7 +436,7 @@ cmd_sync() {
             --check)       check=1 ;;
             --force-file)  force="file" ;;
             --force-refs)  force="refs" ;;
-            *) printf 'git-bra: unknown sync option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-bx: unknown sync option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
@@ -445,11 +445,11 @@ cmd_sync() {
 
     while IFS=' ' read -r branch sha date rest; do
         refs_map["$branch"]="$sha $date"
-    done < <(_bra_refs_read)
+    done < <(_bx_refs_read)
 
     while IFS=' ' read -r branch sha date rest; do
         file_map["$branch"]="$sha $date"
-    done < <(_bra_file_read)
+    done < <(_bx_file_read)
 
     declare -A all_branches
     for b in "${!refs_map[@]}" "${!file_map[@]}"; do all_branches["$b"]=1; done
@@ -468,11 +468,11 @@ cmd_sync() {
                 if [[ -n "$force" ]]; then
                     if [[ "$force" == "file" ]]; then
                         local fsha="${fv%% *}" fdate="${fv#* }"
-                        [[ $check -eq 0 ]] && _bra_refs_write "$b" "$fsha"
+                        [[ $check -eq 0 ]] && _bx_refs_write "$b" "$fsha"
                         printf 'Resolved (force-file): %s -> refs=%s\n' "$b" "${fsha:0:8}"
                     else
                         local rsha="${rv%% *}" rdate="${rv#* }"
-                        [[ $check -eq 0 ]] && _bra_file_write "$b" "$rsha" "$rdate"
+                        [[ $check -eq 0 ]] && _bx_file_write "$b" "$rsha" "$rdate"
                         printf 'Resolved (force-refs): %s -> file=%s\n' "$b" "${rsha:0:8}"
                     fi
                 else
@@ -487,10 +487,10 @@ cmd_sync() {
                 printf 'refs-only: %s (%s)\n' "$b" "${rsha:0:8}"
             elif [[ "$force" == "file" ]]; then
                 # File is authoritative — entry absent from file means remove it from refs
-                _bra_refs_delete "$b"
+                _bx_refs_delete "$b"
                 printf 'Removed from refs (force-file): %s\n' "$b"
             else
-                _bra_file_write "$b" "$rsha" "$rdate"
+                _bx_file_write "$b" "$rsha" "$rdate"
                 printf 'Synced to file: %s\n' "$b"
             fi
         else
@@ -499,10 +499,10 @@ cmd_sync() {
                 printf 'file-only: %s (%s)\n' "$b" "${fsha:0:8}"
             elif [[ "$force" == "refs" ]]; then
                 # Refs is authoritative — entry absent from refs means remove it from file
-                _bra_file_delete "$b"
+                _bx_file_delete "$b"
                 printf 'Removed from file (force-refs): %s\n' "$b"
             else
-                _bra_refs_write "$b" "$fsha"
+                _bx_refs_write "$b" "$fsha"
                 printf 'Synced to refs: %s\n' "$b"
             fi
         fi
@@ -517,7 +517,7 @@ cmd_prune() {
     for arg in "$@"; do
         case "$arg" in
             --force|-f) force=1 ;;
-            *) printf 'git-bra: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
@@ -537,7 +537,7 @@ cmd_prune() {
             continue
         fi
         branches+=("$branch")
-    done < <(_bra_read_all)
+    done < <(_bx_read_all)
 
     if [[ ${#branches[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; then
         printf 'No archived branches found in local branches.\n'
@@ -567,7 +567,7 @@ cmd_prune() {
 
     if [[ $force -eq 0 ]]; then
         printf 'WARNING: This is a dangerous operation. Deleted branches cannot be\n'
-        printf 'recovered from git — only from the git-bra archive.\n'
+        printf 'recovered from git — only from the git-bx archive.\n'
         printf 'Type "yes" to continue: '
         local answer
         read -r answer || true
@@ -586,42 +586,42 @@ cmd_prune() {
 }
 
 cmd_push() {
-    _bra_require_storage refs
+    _bx_require_storage refs
     local dry_run=""
     for arg in "$@"; do
         case "$arg" in
             --dry-run) dry_run="--dry-run" ;;
-            *) printf 'git-bra: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
-    git push $dry_run origin 'refs/bra/*:refs/bra/*'
+    git push $dry_run origin 'refs/bx/*:refs/bx/*'
 }
 
 cmd_pull() {
-    _bra_require_storage refs
-    git fetch origin 'refs/bra/*:refs/bra/*'
+    _bx_require_storage refs
+    git fetch origin 'refs/bx/*:refs/bx/*'
 
     # If file backend is also enabled, sync fetched refs into .gitarchive
     local storage
-    storage=$(_bra_config_storage)
+    storage=$(_bx_config_storage)
     if [[ "$storage" == "both" ]]; then
         local branch sha date
         while IFS=' ' read -r branch sha date rest; do
-            _bra_file_write "$branch" "$sha" "$date"
-        done < <(_bra_refs_read)
+            _bx_file_write "$branch" "$sha" "$date"
+        done < <(_bx_refs_read)
         printf 'Synced fetched refs to .gitarchive\n'
     fi
 }
 
 cmd_help() {
     cat <<'EOF'
-git-bra — BRanch Archiver
+git-bx — Branch arXiver
 
 Archive local git branches that have no remote tracking branch, preserving
 the branch name and HEAD SHA for later inspection or restoration.
 
 USAGE
-  git bra <command> [options]
+  git bx <command> [options]
 
 COMMANDS
   add <branch>                  Archive a single branch
@@ -642,25 +642,25 @@ COMMANDS
   help                          Show this help
 
 STORAGE BACKENDS
-  Configured via: git config bra.storage file|refs|both (default: both)
+  Configured via: git config bx.storage file|refs|both (default: both)
 
   file   Plain text .gitarchive file. Portable and committable, but
          commits may be lost after git gc.
-  refs   Git refs under refs/bra/<branch>. Protects commits from gc.
-         Never pushed to remote unless you run: git bra push
+  refs   Git refs under refs/bx/<branch>. Protects commits from gc.
+         Never pushed to remote unless you run: git bx push
   both   Uses both (default). Each backend covers the other's weakness.
 
 OTHER CONFIG
-  bra.file   Path to archive file (default: .gitarchive)
+  bx.file   Path to archive file (default: .gitarchive)
 
 EXAMPLES
-  git bra add feature/my-feature
-  git bra update
-  git bra list --sort=date --order=desc
-  git bra log feature/my-feature --oneline -10
-  git bra checkout feature/my-feature
-  git bra sync --check
-  git bra push
+  git bx add feature/my-feature
+  git bx update
+  git bx list --sort=date --order=desc
+  git bx log feature/my-feature --oneline -10
+  git bx checkout feature/my-feature
+  git bx sync --check
+  git bx push
 
 EOF
 }
@@ -668,8 +668,8 @@ EOF
 # --- ENTRY POINT -------------------------------------------------------------
 
 main() {
-    _bra_require_git
-    BRA_GIT_ROOT=$(_bra_git_root)
+    _bx_require_git
+    BX_GIT_ROOT=$(_bx_git_root)
 
     local cmd="${1:-}"
     shift || true
@@ -689,8 +689,8 @@ main() {
         help|--help|-h) cmd_help ;;
         "")       cmd_help; exit 1 ;;
         *)
-            printf 'git-bra: unknown command "%s"\n' "$cmd" >&2
-            printf 'Run "git bra help" for usage.\n' >&2
+            printf 'git-bx: unknown command "%s"\n' "$cmd" >&2
+            printf 'Run "git bx help" for usage.\n' >&2
             exit 1
             ;;
     esac

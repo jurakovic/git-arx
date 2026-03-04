@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# install.sh — Install git-bra and configure the git alias
+# install.sh — Install git-bx and configure the git alias
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_SRC="$SCRIPT_DIR/git-bra"
+SCRIPT_SRC="$SCRIPT_DIR/git-bx"
 
 if [[ ! -f "$SCRIPT_SRC" ]]; then
-    printf 'Error: git-bra script not found at %s\n' "$SCRIPT_SRC" >&2
+    printf 'Error: git-bx script not found at %s\n' "$SCRIPT_SRC" >&2
     exit 1
 fi
 
@@ -32,9 +32,9 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
 fi
 
 # Copy script
-cp "$SCRIPT_SRC" "$INSTALL_DIR/git-bra"
-chmod +x "$INSTALL_DIR/git-bra"
-printf 'Installed: %s/git-bra\n' "$INSTALL_DIR"
+cp "$SCRIPT_SRC" "$INSTALL_DIR/git-bx"
+chmod +x "$INSTALL_DIR/git-bx"
+printf 'Installed: %s/git-bx\n' "$INSTALL_DIR"
 
 # Check if install dir is on PATH
 if ! printf '%s' "$PATH" | tr ':' '\n' | grep -qxF "$INSTALL_DIR"; then
@@ -44,6 +44,6 @@ if ! printf '%s' "$PATH" | tr ':' '\n' | grep -qxF "$INSTALL_DIR"; then
 fi
 
 # Set global git alias
-git config --global alias.bra '!git-bra'
-printf 'Git alias set: git bra -> git-bra\n'
-printf '\nDone! Try: git bra help\n'
+git config --global alias.bx '!git-bx'
+printf 'Git alias set: git bx -> git-bx\n'
+printf '\nDone! Try: git bx help\n'

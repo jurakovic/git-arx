@@ -1,4 +1,4 @@
-# git-bra — Internals & Design
+# git-bx — Internals & Design
 
 Implementation details, design decisions, and architectural notes for contributors and maintainers.
 
@@ -6,7 +6,7 @@ Implementation details, design decisions, and architectural notes for contributo
 
 ## Overview
 
-`git-bra` is a single self-contained bash script (~330 lines). There are no dependencies beyond git and bash 4+. The script is structured in four sections separated by comment headers:
+`git-bx` is a single self-contained bash script (~330 lines). There are no dependencies beyond git and bash 4+. The script is structured in four sections separated by comment headers:
 
 ```
 # --- CONFIG HELPERS ---
@@ -26,7 +26,7 @@ All commands go through an internal abstraction layer and never touch storage di
 The README originally described this as "a bash script added as a git alias". That framing was kept because:
 
 - No install dependencies — bash and git are already present everywhere this tool would be used
-- Git aliases with `!` prefix (`git config alias.bra '!git-bra'`) invoke external scripts on `$PATH` natively
+- Git aliases with `!` prefix (`git config alias.bx '!git-bx'`) invoke external scripts on `$PATH` natively
 - The logic is simple enough that bash's limitations (no proper data structures, string-heavy) are acceptable
 - A Go binary would be the right choice if distribution to non-developers were a goal; it's not
 
@@ -57,7 +57,7 @@ This is important for a tool that writes to storage — silent failures would co
 
 The core of the architecture is three functions that all commands call exclusively:
 
-### `_bra_read_all()`
+### `_bx_read_all()`
 
 Reads from configured backend(s) and emits normalized records to stdout, one per line:
 
@@ -71,13 +71,13 @@ For `both` storage, the function performs a union merge:
 1. Emit everything from the refs backend, recording branch names in a `declare -A seen` associative array
 2. Emit file-only entries (those whose branch name is not in `seen`)
 
-Refs are treated as primary in the union merge. This reflects the refs backend's stronger guarantees (gc-safe, native git). The `sync` command surfaces conflicts between backends explicitly; `_bra_read_all` silently prefers refs to avoid making every command into a conflict reporter.
+Refs are treated as primary in the union merge. This reflects the refs backend's stronger guarantees (gc-safe, native git). The `sync` command surfaces conflicts between backends explicitly; `_bx_read_all` silently prefers refs to avoid making every command into a conflict reporter.
 
-### `_bra_write(branch, sha, date)`
+### `_bx_write(branch, sha, date)`
 
 Writes to all configured backends. For `both`, writes to file first, then refs. Order doesn't matter for correctness; file first means a crash between the two writes leaves the more portable copy updated.
 
-### `_bra_delete(branch)`
+### `_bx_delete(branch)`
 
 Removes from all configured backends. For `both`, removes from file first, then refs.
 
@@ -88,7 +88,7 @@ Removes from all configured backends. For `both`, removes from file first, then 
 ### Format
 
 ```
-# git-bra archive — do not edit manually
+# git-bx archive — do not edit manually
 feature/login a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 2025-11-15T10:30:00+01:00
 fix/bug-42 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 ```
@@ -126,7 +126,7 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 - The git object itself still exists in the repository (until gc) — the SHA in the record is the real audit trail
 - Keeping deleted entries would mean the file grows unboundedly
-- `_bra_file_write` already implements filter-then-append, so delete is just filter-without-append — no new code path
+- `_bx_file_write` already implements filter-then-append, so delete is just filter-without-append — no new code path
 
 ---
 
@@ -134,15 +134,15 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 ### Namespace
 
-Archived branches are stored as git refs under `refs/bra/`. For a branch named `feature/login`, the ref path is `refs/bra/feature/login`.
+Archived branches are stored as git refs under `refs/bx/`. For a branch named `feature/login`, the ref path is `refs/bx/feature/login`.
 
-Git ref names allow forward slashes and use them to create directory structure. `refs/bra/feature/login` is stored as the file `.git/refs/bra/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` — no special handling is needed.
+Git ref names allow forward slashes and use them to create directory structure. `refs/bx/feature/login` is stored as the file `.git/refs/bx/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` — no special handling is needed.
 
 The only characters illegal in git ref names are: space, `~`, `^`, `:`, `?`, `*`, `[`, `\`, and the sequences `..` and `@{`. Since git itself rejects branch names with these characters, any valid local branch name is a valid ref name in our namespace.
 
 ### Why Refs Protect from gc
 
-`git gc` prunes **unreachable** objects — commits, trees, and blobs that cannot be reached by following refs (branches, tags, stash, reflogs). When a local branch is deleted, its commits become unreachable unless something else references them. A `refs/bra/` ref is a real git ref, so any commit it points to (and all ancestors of that commit) remain reachable and will not be pruned.
+`git gc` prunes **unreachable** objects — commits, trees, and blobs that cannot be reached by following refs (branches, tags, stash, reflogs). When a local branch is deleted, its commits become unreachable unless something else references them. A `refs/bx/` ref is a real git ref, so any commit it points to (and all ancestors of that commit) remain reachable and will not be pruned.
 
 ### Reading Dates from Refs
 
@@ -151,24 +151,24 @@ The refs backend does not store dates explicitly — the date is read from the c
 ```bash
 git for-each-ref \
     --format='%(refname:short) %(objectname) %(creatordate:iso-strict)' \
-    'refs/bra/'
+    'refs/bx/'
 ```
 
-`%(refname:short)` strips the `refs/` prefix, giving `bra/feature/login`. The `bra/` prefix is then stripped in `_bra_refs_read` to recover the branch name.
+`%(refname:short)` strips the `refs/` prefix, giving `bx/feature/login`. The `bx/` prefix is then stripped in `_bx_refs_read` to recover the branch name.
 
-`%(creatordate:iso-strict)` gives the ISO-8601 date of the commit the ref points to. This is the same date that would have been stored in the file backend, so the normalized output of both `_bra_file_read` and `_bra_refs_read` is identical in format.
+`%(creatordate:iso-strict)` gives the ISO-8601 date of the commit the ref points to. This is the same date that would have been stored in the file backend, so the normalized output of both `_bx_file_read` and `_bx_refs_read` is identical in format.
 
 ### Remote Operations
 
-Refs in `refs/bra/` are not pushed by default. Git only pushes `refs/heads/*` and `refs/tags/*` in a standard `git push`. The `push` command uses an explicit refspec:
+Refs in `refs/bx/` are not pushed by default. Git only pushes `refs/heads/*` and `refs/tags/*` in a standard `git push`. The `push` command uses an explicit refspec:
 
 ```bash
-git push origin 'refs/bra/*:refs/bra/*'
+git push origin 'refs/bx/*:refs/bx/*'
 ```
 
-This pushes all `refs/bra/` refs to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `pull` command uses the equivalent fetch refspec.
+This pushes all `refs/bx/` refs to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `pull` command uses the equivalent fetch refspec.
 
-This is also how the `both` backend can achieve fully automatic remote sync without `git bra push/pull`: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
+This is also how the `both` backend can achieve fully automatic remote sync without `git bx push/pull`: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
 
 ---
 
@@ -183,7 +183,7 @@ In normal usage, drift should not occur — every write operation hits both back
 1. Someone manually edits `.gitarchive` with a text editor
 2. Someone manually creates/deletes refs with raw git commands
 3. A script crash between the file write and the ref write
-4. `git bra pull` without `both` storage (updates refs but not file)
+4. `git bx pull` without `both` storage (updates refs but not file)
 
 ### Union Merge Algorithm
 
@@ -207,7 +207,7 @@ When a SHA conflict is detected and a force flag is present, the designated back
 
 ---
 
-## `bra log` — Argument Passthrough
+## `bx log` — Argument Passthrough
 
 ```bash
 cmd_log() {
@@ -224,7 +224,7 @@ cmd_log() {
 
 ---
 
-## `bra checkout` — gc Detection
+## `bx checkout` — gc Detection
 
 Before attempting to restore, the script checks whether the commit still exists:
 
@@ -238,7 +238,7 @@ fi
 
 ---
 
-## `bra update` — Detecting Branches Without Upstream
+## `bx update` — Detecting Branches Without Upstream
 
 ```bash
 git for-each-ref --format='%(refname:short) %(upstream:short)' refs/heads/
@@ -263,30 +263,30 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 ```bash
 main() {
-    _bra_require_git
-    BRA_GIT_ROOT=$(_bra_git_root)
+    _bx_require_git
+    BX_GIT_ROOT=$(_bx_git_root)
     ...
 }
 ```
 
-`BRA_GIT_ROOT` is set once at startup and used by `_bra_config_file()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git bra list` works correctly regardless of which subdirectory the user is in when they run it.
+`BX_GIT_ROOT` is set once at startup and used by `_bx_config_file()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git bx list` works correctly regardless of which subdirectory the user is in when they run it.
 
-Commands that don't apply to the configured storage call `_bra_require_storage` at the top of their function, which prints a descriptive error and exits:
+Commands that don't apply to the configured storage call `_bx_require_storage` at the top of their function, which prints a descriptive error and exits:
 
 ```
-git-bra: this command requires refs storage (current: file)
+git-bx: this command requires refs storage (current: file)
 ```
 
-Unknown commands print an error referencing `git bra help`.
+Unknown commands print an error referencing `git bx help`.
 
 ---
 
 ## File Structure
 
 ```
-git-bra          Single executable bash script — the entire implementation
-install.sh       Installs git-bra to PATH and sets the git alias
-.gitattributes   Enforces LF line endings for git-bra and install.sh on Windows checkout
+git-bx           Single executable bash script — the entire implementation
+install.sh       Installs git-bx to PATH and sets the git alias
+.gitattributes   Enforces LF line endings for git-bx and install.sh on Windows checkout
 README.md        End-user documentation
 INTERNALS.md     This file
 ```
@@ -298,5 +298,5 @@ INTERNALS.md     This file
 - **No locking.** The archive file has no write lock. Concurrent invocations (unlikely for an interactive tool) could corrupt it. Acceptable trade-off.
 - **bash 4+ required.** Uses `declare -A` associative arrays. macOS ships bash 3.2; users need to install bash via Homebrew and ensure it's on their PATH.
 - **`merge` does not resolve SHA conflicts.** When the same branch appears in two files with different SHAs, the conflict is reported and the entry is skipped. The user must manually decide which SHA is correct and edit the output file. There is no `--force-file` / `--force-refs` equivalent for `merge` (unlike `sync`) because `merge` has no concept of a "primary" source.
-- **`push/pull` hardcodes `origin`.** The remote name is not configurable. This could be added via `bra.remote` config in a future version.
+- **`push/pull` hardcodes `origin`.** The remote name is not configurable. This could be added via `bx.remote` config in a future version.
 - **No autocomplete.** Branch name tab-completion for `add`, `remove`, `log`, `checkout` is not implemented. Shell completion scripts (bash/zsh/fish) would be a useful addition.

@@ -1,8 +1,8 @@
-# git-bra — BRanch Archiver
+# git-bx — Branch arXiver
 
-A git tool for archiving local branches. When you delete a branch, `git-bra` keeps a record of its name and last commit so you can list, inspect, and restore it later.
+A git tool for archiving local branches. When you delete a branch, `git-bx` keeps a record of its name and last commit so you can list, inspect, and restore it later.
 
-Invoked as `git bra <command>` via a git alias.
+Invoked as `git bx <command>` via a git alias.
 
 ---
 
@@ -12,10 +12,10 @@ Invoked as `git bra <command>` via a git alias.
 bash install.sh
 ```
 
-This copies `git-bra` to `~/bin` (Windows/MINGW64) or `~/.local/bin` (Linux/macOS), makes it executable, and sets the global git alias:
+This copies `git-bx` to `~/bin` (Windows/MINGW64) or `~/.local/bin` (Linux/macOS), makes it executable, and sets the global git alias:
 
 ```
-git config --global alias.bra '!git-bra'
+git config --global alias.bx '!git-bx'
 ```
 
 If the install directory is not on your `PATH`, the script will tell you what to add to your shell profile.
@@ -29,9 +29,9 @@ bash install.sh /usr/local/bin
 **Manual setup (no install script):**
 
 ```bash
-cp git-bra ~/.local/bin/git-bra
-chmod +x ~/.local/bin/git-bra
-git config --global alias.bra '!git-bra'
+cp git-bx ~/.local/bin/git-bx
+chmod +x ~/.local/bin/git-bx
+git config --global alias.bx '!git-bx'
 ```
 
 ---
@@ -40,31 +40,31 @@ git config --global alias.bra '!git-bra'
 
 ```bash
 # Archive all local branches that have no remote tracking branch
-git bra update
+git bx update
 
 # Delete the branches you just archived
-git bra prune
+git bx prune
 
 # See what's archived
-git bra list
+git bx list
 
 # Inspect commits on an archived branch
-git bra log feature/my-feature --oneline
+git bx log feature/my-feature --oneline
 
 # Restore a branch
-git bra checkout feature/my-feature
+git bx checkout feature/my-feature
 ```
 
 ---
 
 ## Commands
 
-### `git bra add <branch>`
+### `git bx add <branch>`
 
 Archive a single branch. Stores its name and current HEAD SHA.
 
 ```bash
-git bra add feature/my-feature
+git bx add feature/my-feature
 # Archived: feature/my-feature at a1b2c3d4
 ```
 
@@ -72,12 +72,12 @@ If the branch is already in the archive, this updates its record to the current 
 
 ---
 
-### `git bra remove <branch>`
+### `git bx remove <branch>`
 
 Remove a branch from the archive.
 
 ```bash
-git bra remove feature/my-feature
+git bx remove feature/my-feature
 # Removed: feature/my-feature
 ```
 
@@ -85,12 +85,12 @@ This does not delete the local branch — only removes it from the archive.
 
 ---
 
-### `git bra update`
+### `git bx update`
 
 Archive all local branches that have no remote tracking branch configured. Useful as a regular cleanup step before deleting stale branches.
 
 ```bash
-git bra update
+git bx update
 # Archived: feature/old-idea
 # Archived: fix/quick-hack
 # Done. Archived 2 branch(es).
@@ -100,18 +100,18 @@ Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches wh
 
 ---
 
-### `git bra prune`
+### `git bx prune`
 
 Delete all local branches that are currently in the archive. Prompts for confirmation before proceeding.
 
 ```bash
-git bra prune
+git bx prune
 # The following local branches will be permanently deleted:
 #   feature/old-idea
 #   fix/quick-hack
 #
 # WARNING: This is a dangerous operation. Deleted branches cannot be
-# recovered from git — only from the git-bra archive.
+# recovered from git — only from the git-bx archive.
 # Type "yes" to continue: yes
 # Deleted branch feature/old-idea (was a1b2c3d4).
 # Deleted branch fix/quick-hack (was deadbeef).
@@ -127,19 +127,19 @@ If you are currently checked out on an archived branch, it is skipped with a not
 | `--force`, `-f` | Skip the confirmation prompt and delete immediately. |
 
 ```bash
-git bra prune --force
+git bx prune --force
 ```
 
-A typical workflow is `git bra update` followed by `git bra prune` — archive first, then delete in one step.
+A typical workflow is `git bx update` followed by `git bx prune` — archive first, then delete in one step.
 
 ---
 
-### `git bra list`
+### `git bx list`
 
 List all archived branches.
 
 ```bash
-git bra list
+git bx list
 # BRANCH                                   SHA       DATE
 # ------                                   ---       ----
 # feature/my-feature                       a1b2c3d4  2025-11-15
@@ -157,33 +157,33 @@ git bra list
 | `--storage=file\|refs\|both` | Show only branches from the given backend (default: configured storage) |
 
 ```bash
-git bra list --sort=name --order=asc
-git bra list --storage=refs
-git bra list --storage=file
+git bx list --sort=name --order=asc
+git bx list --storage=refs
+git bx list --storage=file
 ```
 
 ---
 
-### `git bra log <branch> [git-log-flags...]`
+### `git bx log <branch> [git-log-flags...]`
 
 Show the commit history of an archived branch. All flags are passed directly to `git log`, so anything that works with `git log` works here.
 
 ```bash
-git bra log feature/my-feature
-git bra log feature/my-feature --oneline
-git bra log feature/my-feature --oneline -10
-git bra log feature/my-feature --stat
-git bra log feature/my-feature --format="%h %s" --since="2 weeks ago"
+git bx log feature/my-feature
+git bx log feature/my-feature --oneline
+git bx log feature/my-feature --oneline -10
+git bx log feature/my-feature --stat
+git bx log feature/my-feature --format="%h %s" --since="2 weeks ago"
 ```
 
 ---
 
-### `git bra checkout <branch>`
+### `git bx checkout <branch>`
 
 Restore an archived branch by creating a new local branch at the archived SHA.
 
 ```bash
-git bra checkout feature/my-feature
+git bx checkout feature/my-feature
 # Switched to a new branch 'feature/my-feature'
 # Restored branch: feature/my-feature at a1b2c3d4
 ```
@@ -191,20 +191,20 @@ git bra checkout feature/my-feature
 If the commit no longer exists (garbage collected), you will see a warning:
 
 ```
-git-bra: WARNING: SHA a1b2c3d4 for branch "feature/my-feature" appears to have been garbage collected.
-The branch cannot be restored. You can remove it with: git bra remove feature/my-feature
+git-bx: WARNING: SHA a1b2c3d4 for branch "feature/my-feature" appears to have been garbage collected.
+The branch cannot be restored. You can remove it with: git bx remove feature/my-feature
 ```
 
 If a local branch with the same name already exists, the command exits with an error rather than overwriting it.
 
 ---
 
-### `git bra merge <file1> <file2> -o <output>`
+### `git bx merge <file1> <file2> -o <output>`
 
 Merge two `.gitarchive` files into one. Useful when syncing archives between machines without a shared remote.
 
 ```bash
-git bra merge .gitarchive /backup/.gitarchive -o merged.gitarchive
+git bx merge .gitarchive /backup/.gitarchive -o merged.gitarchive
 # Merged 14 entries to merged.gitarchive (1 conflict(s) skipped)
 ```
 
@@ -216,36 +216,36 @@ Requires `file` storage to be enabled.
 
 ---
 
-### `git bra push`
+### `git bx push`
 
 Push archived refs to the remote, making them available to other clones of the repository.
 
 ```bash
-git bra push
+git bx push
 # To origin
-#  * [new ref]   refs/bra/feature/my-feature -> refs/bra/feature/my-feature
+#  * [new ref]   refs/bx/feature/my-feature -> refs/bx/feature/my-feature
 ```
 
 Use `--dry-run` to see what would be pushed without actually pushing:
 
 ```bash
-git bra push --dry-run
+git bx push --dry-run
 # To origin
-#  * [new ref]   refs/bra/feature/my-feature -> refs/bra/feature/my-feature
+#  * [new ref]   refs/bx/feature/my-feature -> refs/bx/feature/my-feature
 ```
 
 Requires `refs` storage to be enabled.
 
 ---
 
-### `git bra pull`
+### `git bx pull`
 
 Fetch archived refs from the remote. If `both` storage is configured, the `.gitarchive` file is automatically updated to match.
 
 ```bash
-git bra pull
+git bx pull
 # From origin
-#  * [new ref]   refs/bra/feature/my-feature -> refs/bra/feature/my-feature
+#  * [new ref]   refs/bx/feature/my-feature -> refs/bx/feature/my-feature
 # Synced fetched refs to .gitarchive
 ```
 
@@ -253,12 +253,12 @@ Requires `refs` storage to be enabled.
 
 ---
 
-### `git bra sync`
+### `git bx sync`
 
 Reconcile the two local storage backends when they have drifted out of sync. Performs a union merge: anything present in either backend is written to both.
 
 ```bash
-git bra sync
+git bx sync
 # Synced to file: feature/old-idea
 # Sync complete.
 ```
@@ -272,11 +272,11 @@ git bra sync
 | `--force-refs` | Treat refs as the source of truth: resolve SHA conflicts using the ref's SHA, and delete any file-only entries from the file (they are absent from refs). |
 
 ```bash
-git bra sync --check
+git bx sync --check
 # refs-only: feature/old-idea (a1b2c3d4)
 # Check complete.
 
-git bra sync --force-refs
+git bx sync --force-refs
 # Resolved (force-refs): feature/old-idea -> file=a1b2c3d4
 # Removed from file (force-refs): fix/dead-end
 # Sync complete.
@@ -288,14 +288,14 @@ Requires `both` storage to be enabled.
 
 ---
 
-### `git bra help`
+### `git bx help`
 
 Print the built-in usage summary.
 
 ```bash
-git bra help
-git bra --help
-git bra -h
+git bx help
+git bx --help
+git bx -h
 ```
 
 ---
@@ -304,29 +304,29 @@ git bra -h
 
 All settings are managed via `git config`. They can be set per-repo or globally.
 
-### `bra.storage`
+### `bx.storage`
 
 Controls which storage backend(s) are used.
 
 ```bash
-git config bra.storage both    # default
-git config bra.storage file
-git config bra.storage refs
+git config bx.storage both    # default
+git config bx.storage file
+git config bx.storage refs
 ```
 
 | Value | Description |
 |---|---|
 | `both` | Use both backends simultaneously. Recommended default. |
 | `file` | Plain text `.gitarchive` file only. |
-| `refs` | Git refs under `refs/bra/` only. |
+| `refs` | Git refs under `refs/bx/` only. |
 
-### `bra.file`
+### `bx.file`
 
 Path to the archive file, relative to the repository root. Default: `.gitarchive`.
 
 ```bash
-git config bra.file .git/bra-archive   # keep it out of the working tree
-git config bra.file my-archive.txt
+git config bx.file .git/bx-archive   # keep it out of the working tree
+git config bx.file my-archive.txt
 ```
 
 ---
@@ -335,10 +335,10 @@ git config bra.file my-archive.txt
 
 ### File backend — `.gitarchive`
 
-A plain text file at the repository root (or wherever `bra.file` points). One entry per line:
+A plain text file at the repository root (or wherever `bx.file` points). One entry per line:
 
 ```
-# git-bra archive — do not edit manually
+# git-bx archive — do not edit manually
 feature/my-feature a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 2025-11-15T10:30:00+01:00
 fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 ```
@@ -347,26 +347,26 @@ fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 - Human-readable — inspect it with any text editor or `cat .gitarchive`
 - Portable — copy it anywhere, email it, commit it to the repo
 - If committed to the repository, it syncs automatically with every `git push`/`git pull`
-- Can be merged between machines with `git bra merge`
+- Can be merged between machines with `git bx merge`
 
 **Weakness:** The archive is just a text file. Git does not know it exists, so commits referenced in it can be pruned by `git gc` once they become unreachable.
 
-### Refs backend — `refs/bra/`
+### Refs backend — `refs/bx/`
 
-Git refs stored under `refs/bra/<branch-name>` inside `.git/refs/`. These are standard git refs that git tracks natively.
+Git refs stored under `refs/bx/<branch-name>` inside `.git/refs/`. These are standard git refs that git tracks natively.
 
 ```bash
 # Inspect directly
-git show-ref | grep refs/bra/
-git log refs/bra/feature/my-feature --oneline
+git show-ref | grep refs/bx/
+git log refs/bx/feature/my-feature --oneline
 ```
 
 **Strengths:**
 - As long as a ref exists, `git gc` will never prune the commit it points to
 - Native git integration — any git command that accepts a ref or SHA works
-- Can be shared via `git bra push` / `git bra pull`
+- Can be shared via `git bx push` / `git bx pull`
 
-**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git bra push`).
+**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git bx push`).
 
 ### Both (default)
 
@@ -374,7 +374,7 @@ Uses both backends for every operation. Writes go to both; reads prefer refs and
 
 Each backend covers the other's weakness:
 - Refs protect commits from gc; file provides portability and human-readability
-- If you commit `.gitarchive` to the repo, you get automatic remote sync for free — no need to use `git bra push/pull`
+- If you commit `.gitarchive` to the repo, you get automatic remote sync for free — no need to use `git bx push/pull`
 
 ---
 
@@ -384,15 +384,15 @@ Each backend covers the other's weakness:
 
 ```bash
 # Archive and delete stale branches in two steps
-git bra update
-git bra prune
+git bx update
+git bx prune
 
 # Later, need to find something
-git bra list
-git bra log feature/done-1 --oneline
+git bx list
+git bx log feature/done-1 --oneline
 
 # Restore if needed
-git bra checkout feature/done-1
+git bx checkout feature/done-1
 ```
 
 ### Syncing across machines (with a shared remote)
@@ -400,15 +400,15 @@ git bra checkout feature/done-1
 Enable refs storage (included in the default `both`), then push your archived refs along with your normal push:
 
 ```bash
-git bra update
-git bra push
+git bx update
+git bx push
 ```
 
 On another machine:
 
 ```bash
-git bra pull
-git bra list
+git bx pull
+git bx list
 ```
 
 ### Syncing across machines (no shared remote)
@@ -417,11 +417,11 @@ Use file storage and copy the `.gitarchive` file between machines:
 
 ```bash
 # Machine A
-git bra update
+git bx update
 scp .gitarchive machine-b:~/project/.gitarchive-a
 
 # Machine B
-git bra merge .gitarchive .gitarchive-a -o .gitarchive
+git bx merge .gitarchive .gitarchive-a -o .gitarchive
 ```
 
 Or commit `.gitarchive` to the repository — it will sync along with the rest of the codebase via normal git push/pull.
@@ -431,8 +431,8 @@ Or commit `.gitarchive` to the repository — it will sync along with the rest o
 If you don't need gc protection and just want a simple log:
 
 ```bash
-git config bra.storage file
-git config bra.file .gitarchive
+git config bx.storage file
+git config bx.file .gitarchive
 
 # Optionally commit it so it syncs with the repo
 echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
@@ -442,7 +442,7 @@ echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 
 ## Notes
 
-- `git bra update` detects branches to archive by checking whether the upstream tracking ref exists locally via `git rev-parse --verify`. If `%(upstream)` (the full ref path, e.g. `refs/remotes/origin/branch`) resolves to nothing, the branch is archived. This handles both branches that never had a remote and branches whose remote was deleted (after `git fetch --prune`).
-- `git bra add` on an already-archived branch updates the record to the current HEAD — it does not duplicate the entry.
+- `git bx update` detects branches to archive by checking whether the upstream tracking ref exists locally via `git rev-parse --verify`. If `%(upstream)` (the full ref path, e.g. `refs/remotes/origin/branch`) resolves to nothing, the branch is archived. This handles both branches that never had a remote and branches whose remote was deleted (after `git fetch --prune`).
+- `git bx add` on an already-archived branch updates the record to the current HEAD — it does not duplicate the entry.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
 - The tool requires bash 4+ (for associative arrays). Git for Windows ships with bash 4.4 or later.
