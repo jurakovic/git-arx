@@ -64,6 +64,18 @@ This is important for a tool that writes to storage — silent failures would co
 - `git cat-file -e "$sha"` — used for existence checks, returns 1 if the object is missing. Wrapped in `if ! ...`.
 - `git update-ref -d` — used when deleting refs that may not exist. Followed by `|| true`.
 - `(( counter++ ))` — arithmetic `(( expr ))` returns 1 when the expression evaluates to 0. Use `counter=$(( counter + 1 ))` instead.
+- `[[ $dry_run -eq 1 ]] && printf '...\n'` — when `dry_run=0`, `[[ ]]` returns 1, which is the exit code of the whole `&&` expression, triggering `set -e`. Always append `|| true`: `[[ $dry_run -eq 1 ]] && printf '...\n' || true`.
+
+**Implementing `--dry-run` on a command:**
+
+1. Add a `local dry_run=0` variable and a `--dry-run)  dry_run=1 ;;` case in the option parser.
+2. Keep all output (`printf`) statements identical to the non-dry-run path — the user sees the same output either way.
+3. Guard every write/delete with `[[ $dry_run -eq 0 ]] && ...` or wrap in `if [[ $dry_run -eq 0 ]]; then ... fi`.
+4. Append a single trailing line after the normal summary:
+   ```bash
+   [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true
+   ```
+   The `|| true` is mandatory — see the caveat above.
 
 ---
 
@@ -280,7 +292,7 @@ for each branch in (refs ∪ file):
 
 Non-conflicting entries are always processed. A conflict does not block other entries from being synced. After processing all entries, if any conflicts occurred, `sync` exits with status 1.
 
-**`--check`:** Runs the same comparison logic but prints diffs instead of writing. Output lines are prefixed with `refs-only:`, `file-only:`, or `CONFLICT:`. No storage is touched.
+**`--dry-run`:** Runs the same comparison logic and prints the same output as a real sync, but skips all writes. A trailing `(dry run — no changes written)` line is appended. Works with or without `--force-file` / `--force-refs` — output shows exactly what would happen if the flag were run without `--dry-run`.
 
 **`--force-file` / `--force-refs`:** When a SHA conflict is detected and a force flag is present, the designated backend is treated as the source of truth and the other is overwritten. This is an escape hatch for the rare case where the user knows which side is correct.
 

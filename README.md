@@ -134,6 +134,16 @@ git bx update
 
 Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches whose upstream was deleted on the remote (shown as `[gone]` in `git branch -vv`) are archived.
 
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--dry-run` | Show which branches would be archived without writing anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
+
+```bash
+git bx update --dry-run
+```
+
 Run `git bx prune` to delete the archived branches from your local repo.
 
 ---
@@ -163,9 +173,11 @@ If you are currently checked out on an archived branch, it is skipped with a not
 | Option | Description |
 |---|---|
 | `--force`, `-f` | Skip the confirmation prompt and delete immediately. |
+| `--dry-run` | Show which branches would be deleted without deleting anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
 
 ```bash
 git bx prune --force
+git bx prune --dry-run
 ```
 
 ---
@@ -332,14 +344,21 @@ git bx sync
 
 | Flag | Description |
 |---|---|
-| `--check` | Dry-run. Show differences without making any changes. |
+| `--dry-run` | Show what would change without making any changes. Produces the same output as a real run, followed by `(dry run — no changes written)`. Combine with `--force-file` or `--force-refs` to preview what those would do. |
 | `--force-file` | Treat `.gitarchive` as the source of truth: resolve SHA conflicts using the file's SHA, and delete any refs-only entries from refs (they are absent from the file). |
 | `--force-refs` | Treat refs as the source of truth: resolve SHA conflicts using the ref's SHA, and delete any file-only entries from the file (they are absent from refs). |
 
 ```bash
-git bx sync --check
-# refs-only: feature/old-idea (a1b2c3d4)
-# Check complete.
+git bx sync --dry-run
+# Synced to file: feature/old-idea
+# Sync complete.
+# (dry run — no changes written)
+
+git bx sync --dry-run --force-refs
+# Resolved (force-refs): feature/old-idea -> file=a1b2c3d4
+# Removed from file (force-refs): fix/dead-end
+# Sync complete.
+# (dry run — no changes written)
 
 git bx sync --force-refs
 # Resolved (force-refs): feature/old-idea -> file=a1b2c3d4

@@ -226,6 +226,29 @@ test_update() {
     # Restore: remove tracking so later tests are not affected
     git branch --unset-upstream feature/alpha 2>/dev/null || true
     git update-ref -d refs/remotes/origin/feature/alpha 2>/dev/null || true
+
+    # --dry-run: shows same output without writing
+    reset_archive
+    out=$("$BX" update --dry-run 2>&1)
+    if printf '%s' "$out" | grep -qF "Archived: feature/alpha"; then
+        pass "update --dry-run: shows archived message"
+    else
+        fail "update --dry-run: should show archived message"
+        printf '      got: %s\n' "$out"
+    fi
+    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+        pass "update --dry-run: appends dry-run line"
+    else
+        fail "update --dry-run: should append dry-run line"
+        printf '      got: %s\n' "$out"
+    fi
+    if [[ ! -f .gitarchive ]]; then
+        pass "update --dry-run: does not write archive"
+    else
+        fail "update --dry-run: should not write archive"
+    fi
+
+    assert_fails "update: unknown option: nonzero" "$BX" update --bogus
 }
 
 test_log() {
@@ -293,6 +316,29 @@ test_prune() {
         printf '      got: %s\n' "$out"
     fi
     git checkout "$DEFAULT_BRANCH" -q
+
+    # --dry-run: shows branch list without deleting
+    recreate_branches
+    "$BX" add feature/alpha > /dev/null
+    "$BX" add feature/beta  > /dev/null
+    out=$("$BX" prune --dry-run 2>&1)
+    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+        pass "prune --dry-run: appends dry-run line"
+    else
+        fail "prune --dry-run: should append dry-run line"
+        printf '      got: %s\n' "$out"
+    fi
+    if printf '%s' "$out" | grep -qF "feature/alpha"; then
+        pass "prune --dry-run: lists branch that would be deleted"
+    else
+        fail "prune --dry-run: should list branch"
+        printf '      got: %s\n' "$out"
+    fi
+    if git rev-parse --verify refs/heads/feature/alpha > /dev/null 2>&1; then
+        pass "prune --dry-run: branch still exists locally"
+    else
+        fail "prune --dry-run: branch should not be deleted"
+    fi
 
     assert_fails "prune: unknown option: nonzero" "$BX" prune --bogus
 
@@ -460,12 +506,23 @@ test_sync() {
     printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
 
     local out
-    out=$("$BX" sync --check 2>&1)
-    if printf '%s' "$out" | grep -qF "file-only: feature/alpha"; then
-        pass "sync --check: reports file-only entry"
+    out=$("$BX" sync --dry-run 2>&1)
+    if printf '%s' "$out" | grep -qF "Synced to refs: feature/alpha"; then
+        pass "sync --dry-run: reports file-only entry"
     else
-        fail "sync --check: should report file-only"
+        fail "sync --dry-run: should report file-only"
         printf '      got: %s\n' "$out"
+    fi
+    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+        pass "sync --dry-run: appends dry-run line"
+    else
+        fail "sync --dry-run: should append dry-run line"
+        printf '      got: %s\n' "$out"
+    fi
+    if ! git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+        pass "sync --dry-run: does not write to refs"
+    else
+        fail "sync --dry-run: should not write to refs"
     fi
 
     "$BX" sync > /dev/null
@@ -480,11 +537,11 @@ test_sync() {
     set_storage both
     git update-ref "refs/bx/feature/beta" "$SHA_BETA"
 
-    out=$("$BX" sync --check 2>&1)
-    if printf '%s' "$out" | grep -qF "refs-only: feature/beta"; then
-        pass "sync --check: reports refs-only entry"
+    out=$("$BX" sync --dry-run 2>&1)
+    if printf '%s' "$out" | grep -qF "Synced to file: feature/beta"; then
+        pass "sync --dry-run: reports refs-only entry"
     else
-        fail "sync --check: should report refs-only"
+        fail "sync --dry-run: should report refs-only"
         printf '      got: %s\n' "$out"
     fi
 
@@ -528,6 +585,58 @@ test_sync() {
         pass "sync --force-refs: file updated to refs' SHA"
     else
         fail "sync --force-refs: file should have refs' SHA"
+    fi
+
+    # --dry-run --force-file: shows what would happen without writing
+    reset_archive
+    set_storage both
+    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    git update-ref "refs/bx/feature/alpha" "$SHA_BETA"
+    out=$("$BX" sync --dry-run --force-file 2>&1)
+    if printf '%s' "$out" | grep -qF "Resolved (force-file)"; then
+        pass "sync --dry-run --force-file: shows resolved message"
+    else
+        fail "sync --dry-run --force-file: should show resolved message"
+        printf '      got: %s\n' "$out"
+    fi
+    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+        pass "sync --dry-run --force-file: appends dry-run line"
+    else
+        fail "sync --dry-run --force-file: should append dry-run line"
+        printf '      got: %s\n' "$out"
+    fi
+    # Verify no write happened: refs should still have SHA_BETA
+    local still_beta
+    still_beta=$(git rev-parse refs/bx/feature/alpha)
+    if [[ "$still_beta" == "$SHA_BETA" ]]; then
+        pass "sync --dry-run --force-file: does not write"
+    else
+        fail "sync --dry-run --force-file: should not write"
+    fi
+
+    # --dry-run --force-refs: shows what would happen without writing
+    reset_archive
+    set_storage both
+    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    git update-ref "refs/bx/feature/alpha" "$SHA_BETA"
+    out=$("$BX" sync --dry-run --force-refs 2>&1)
+    if printf '%s' "$out" | grep -qF "Resolved (force-refs)"; then
+        pass "sync --dry-run --force-refs: shows resolved message"
+    else
+        fail "sync --dry-run --force-refs: should show resolved message"
+        printf '      got: %s\n' "$out"
+    fi
+    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+        pass "sync --dry-run --force-refs: appends dry-run line"
+    else
+        fail "sync --dry-run --force-refs: should append dry-run line"
+        printf '      got: %s\n' "$out"
+    fi
+    # Verify no write happened: file should still have SHA_ALPHA
+    if grep -qF "$SHA_ALPHA" .gitarchive; then
+        pass "sync --dry-run --force-refs: does not write"
+    else
+        fail "sync --dry-run --force-refs: should not write"
     fi
 
     # sync requires both
