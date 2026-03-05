@@ -224,11 +224,7 @@ This is also how the `both` backend can achieve fully automatic remote sync with
 
 ### `bx update` and `bx status`
 
-Both commands use the same upstream-detection logic:
-
-```bash
-git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/
-```
+Both commands use the same upstream-detection logic. Both also use the same performance optimisation — see below.
 
 `%(upstream)` outputs the full ref path of the configured upstream (e.g. `refs/remotes/origin/main`). If no upstream is configured, the field is empty. A branch is a candidate for archiving if the upstream field is empty (never had a remote) or `git rev-parse --verify "$upstream_ref"` fails (upstream configured but the tracking ref no longer exists locally).
 
@@ -240,23 +236,41 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 `bx update` writes the archive for each candidate. `bx status` runs the same detection and determines each branch's archive state (`Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`). Nothing is written.
 
-### `bx status` — Performance
+### Performance (`bx update`, `bx status`, `bx list --author`)
 
-For repos with many branches, naive per-branch `git rev-parse` and `git log` calls add up quickly. `bx status` avoids this with two bulk operations up front:
+For repos with many branches or archived entries, naive per-branch subprocess calls add up to tens of seconds. Three commands use bulk operations to avoid this.
 
-1. **Archive loaded once** — `_bx_read_all` is called once and its output is stored in two in-memory associative arrays: `arc_by_name[branch]=sha` and `arc_by_sha[sha]=name`. All per-branch archive lookups are then O(1) bash hash table reads instead of O(n) subprocess calls.
+**`bx update` and `bx status`** share the same two optimisations:
 
-2. **Single `git for-each-ref` call** — a single call retrieves branch name, SHA, author date, and author name for every branch at once, replacing per-branch `git rev-parse` and `git log` calls:
+1. **Archive loaded once** — `_bx_read_all` is called once before the branch loop and its output is stored in two in-memory associative arrays: `arc_by_name[branch]=sha` and `arc_by_sha[sha]=name`. All per-branch archive lookups are then O(1) bash hash table reads instead of O(n) subprocess calls.
+
+2. **Single `git for-each-ref` call** — a single call retrieves branch name, SHA, author date, and (for `status`) author name for every branch at once, replacing per-branch `git rev-parse` and `git log` calls:
 
 ```bash
+# bx status (includes authorname for display)
 git for-each-ref \
     --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(authorname)%09%(upstream)' \
     refs/heads/
+
+# bx update (authorname not needed)
+git for-each-ref \
+    --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(upstream)' \
+    refs/heads/
 ```
+
+`bx update` also keeps the in-memory maps current after each write — `arc_by_name` and `arc_by_sha` are updated immediately after `_bx_write` — so that subsequent branches processed in the same run see the correct archive state.
 
 **`%(upstream)` must be last.** Tab (`%09`) is an IFS whitespace character. When `%(upstream)` is empty, it produces two consecutive tabs. Because IFS whitespace collapses, `read` treats `<TAB><TAB>` as a single separator — the empty field disappears and all subsequent fields shift left. Placing `%(upstream)` last avoids this: the trailing tab is stripped cleanly, and `upstream_ref` is assigned an empty string, which is the correct behaviour.
 
 **`set -u` and associative arrays.** Accessing a missing key in an associative array with `set -u` enabled triggers an "unbound variable" error in bash 4.x. All array reads use `${arr[key]:-}` to provide an explicit empty-string default and suppress the error.
+
+**`bx list --author`** — archived SHAs are not local branch refs, so `git for-each-ref` does not apply. Instead, all SHAs are collected from the sorted entries and passed to a single `git log --no-walk` call, reducing N subprocess calls to one:
+
+```bash
+git log --no-walk --format='%H %an' sha1 sha2 sha3 ...
+```
+
+The result is stored in `author_by_sha[sha]=name` and looked up during rendering. gc'd commits are absent from the output and fall back to `(gc)` via `${author_by_sha[$sha]:-\(gc\)}`.
 
 ### `bx add` — Conflict Detection
 
@@ -267,7 +281,7 @@ Before writing, `add` calls `_bx_lookup_branch` against the target name (which m
 3. **Archived with different SHA** — conflict. Exit 1 with an error and hints. `--force` overwrites; an `archive-name` argument stores under a different name instead.
 4. **Not archived by target name, but SHA already present under a different name** — `_bx_lookup_sha` finds the duplicate. Prints a `Note:` line, then writes anyway (the user explicitly requested this archive entry).
 
-`bx update` applies the same conflict logic for every candidate branch. Additionally, it calls `_bx_lookup_sha` for branches with no existing archive entry: if the current SHA is already stored under a different name, the branch is skipped with an `Already safe:` message and counted separately in the summary. This prevents silent duplicate SHA storage during automatic archiving. If the user wants the branch indexed under its natural name too, they can run `git bx add <branch>` explicitly.
+`bx update` applies the same conflict logic for every candidate branch, using the in-memory `arc_by_name` and `arc_by_sha` maps (see Performance section) rather than calling `_bx_lookup_branch` and `_bx_lookup_sha` per branch. If the current SHA is already stored under a different name, the branch is skipped with an `Already safe:` message and counted separately in the summary. This prevents silent duplicate SHA storage during automatic archiving. If the user wants the branch indexed under its natural name too, they can run `git bx add <branch>` explicitly.
 
 ### `bx rename`
 

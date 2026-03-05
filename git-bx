@@ -335,29 +335,31 @@ cmd_update() {
         esac
     done
 
+    # Load archive once into associative arrays for O(1) lookup.
+    # %(upstream) last — see INTERNALS for the IFS tab-collapsing explanation.
+    declare -A arc_by_name arc_by_sha
+    while IFS=' ' read -r b sha date rest; do
+        arc_by_name["$b"]="$sha"
+        [[ -z "${arc_by_sha[$sha]:-}" ]] && arc_by_sha["$sha"]="$b" || true
+    done < <(_bx_read_all)
+
     local archived=0 conflicts=0 already_safe=0
-    while IFS=$'\t' read -r branch upstream_ref; do
+    while IFS=$'\t' read -r branch sha date upstream_ref; do
         # Skip if upstream ref exists locally (live remote tracking branch)
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
 
-        local sha date
-        sha=$(git rev-parse "refs/heads/${branch}")
-        date=$(git log -1 --format=%aI "refs/heads/${branch}")
-
-        local existing_entry existing_sha
-        existing_entry=$(_bx_lookup_branch "$branch")
-        if [[ -n "$existing_entry" ]]; then
-            existing_sha=$(printf '%s' "$existing_entry" | awk '{print $1}')
+        local existing_sha existing_as
+        existing_sha="${arc_by_name[$branch]:-}"
+        if [[ -n "$existing_sha" ]]; then
             if [[ "$existing_sha" == "$sha" ]]; then
                 continue  # already up to date
             fi
             if [[ $force -eq 0 ]]; then
-                local existing_as_conflict
-                existing_as_conflict=$(_bx_lookup_sha "$sha")
-                if [[ -n "$existing_as_conflict" ]]; then
-                    printf 'Already safe: %s (%s archived as "%s") — skipped\n' "$branch" "${sha:0:8}" "$existing_as_conflict"
+                existing_as="${arc_by_sha[$sha]:-}"
+                if [[ -n "$existing_as" ]]; then
+                    printf 'Already safe: %s (%s archived as "%s") — skipped\n' "$branch" "${sha:0:8}" "$existing_as"
                     already_safe=$(( already_safe + 1 ))
                 else
                     printf 'Conflict: %s (archived: %s, current: %s) — skipped\n' \
@@ -367,13 +369,14 @@ cmd_update() {
                 continue
             fi
             [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
+            arc_by_name[$branch]="$sha"
+            arc_by_sha[$sha]="$branch"
             printf 'Updated: %s at %s\n' "$branch" "${sha:0:8}"
             archived=$(( archived + 1 ))
             continue
         fi
 
-        local existing_as
-        existing_as=$(_bx_lookup_sha "$sha")
+        existing_as="${arc_by_sha[$sha]:-}"
         if [[ -n "$existing_as" ]]; then
             printf 'Already safe: %s (%s archived as "%s") — skipped\n' "$branch" "${sha:0:8}" "$existing_as"
             already_safe=$(( already_safe + 1 ))
@@ -381,9 +384,13 @@ cmd_update() {
         fi
 
         [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
+        arc_by_name[$branch]="$sha"
+        arc_by_sha[$sha]="$branch"
         printf 'Archived: %s\n' "$branch"
         archived=$(( archived + 1 ))
-    done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
+    done < <(git for-each-ref \
+        --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(upstream)' \
+        refs/heads/)
 
     printf 'Done. Archived %d branch(es)' "$archived"
     [[ $already_safe -gt 0 ]] && printf ', %d already safe (SHA archived under different name)' "$already_safe" || true
@@ -493,6 +500,20 @@ cmd_list() {
     local sorted
     sorted=$(printf '%s\n' "$entries" | sort $sort_flag -k"${sort_field}")
 
+    # For --author, fetch all authors in one git log call instead of per-entry.
+    declare -A author_by_sha
+    if [[ $show_author -eq 1 ]]; then
+        local -a all_shas=()
+        while IFS=' ' read -r _b sha _rest; do
+            all_shas+=("$sha")
+        done <<< "$sorted"
+        if [[ ${#all_shas[@]} -gt 0 ]]; then
+            while IFS=' ' read -r sha author_name; do
+                author_by_sha["$sha"]="$author_name"
+            done < <(git log --no-walk --format='%H %an' "${all_shas[@]}" 2>/dev/null || true)
+        fi
+    fi
+
     # Print header and table
     if [[ $show_author -eq 1 ]]; then
         printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR"
@@ -503,9 +524,7 @@ cmd_list() {
     fi
     while IFS=' ' read -r branch sha date rest; do
         if [[ $show_author -eq 1 ]]; then
-            local author
-            author=$(git log -1 --format=%an "$sha" 2>/dev/null || printf '(gc)')
-            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "$author"
+            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-\(gc\)}"
         else
             printf '%-40s %-9s %s\n' "$branch" "${sha:0:8}" "${date:0:10}"
         fi
