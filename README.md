@@ -141,6 +141,15 @@ Conflict: feature/my-feature (archived: a1b2c3d4, current: deadbeef) — skipped
 Done. Archived 2 branch(es), 1 conflict(s) skipped.
 ```
 
+Branches whose current SHA is **already archived under a different name** are also skipped — the SHA is already safe, and no duplicate entry is needed. The summary reports these separately.
+
+```
+Already safe: feature/my-feature (a1b2c3d4 archived as "feature/my-feature-old") — skipped
+Done. Archived 1 branch(es), 1 already safe (SHA archived under different name).
+```
+
+If you do want the branch indexed under its natural name as well (so that `git bx checkout feature/my-feature` works), run `git bx add feature/my-feature` explicitly.
+
 **Options:**
 
 | Option | Description |
@@ -278,7 +287,14 @@ If the branch is already in the archive with a **different SHA** (a conflict), t
 ```
 git-bx: conflict: "feature/my-feature" is already archived at a1b2c3d4 (current: deadbeef)
 To overwrite:                  git bx add feature/my-feature --force
-To archive under a new name:   git bx add feature/my-feature <alias>
+To archive under a new name:   git bx add feature/my-feature <archive-name>
+```
+
+If the branch's current SHA is **already archived under a different name**, a note is printed before archiving — the command still proceeds, since you explicitly asked for it:
+
+```
+Note: a1b2c3d4 is already archived as "feature/my-feature-old"
+Archived: feature/my-feature at a1b2c3d4
 ```
 
 **Options and arguments:**

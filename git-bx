@@ -206,6 +206,15 @@ _bx_sha_exists() {
     git cat-file -e "$sha" 2>/dev/null
 }
 
+_bx_lookup_sha() {
+    local target_sha="$1" match_name sha date rest
+    local -a names=()
+    while IFS=' ' read -r match_name sha date rest; do
+        [[ "$sha" == "$target_sha" ]] && names+=("$match_name") || true
+    done < <(_bx_read_all)
+    [[ ${#names[@]} -gt 0 ]] && printf '%s' "${names[*]}" || true
+}
+
 # --- COMMANDS ----------------------------------------------------------------
 
 cmd_add() {
@@ -253,6 +262,12 @@ cmd_add() {
             fi
             exit 1
         fi
+    fi
+
+    local existing_as
+    existing_as=$(_bx_lookup_sha "$sha")
+    if [[ -n "$existing_as" ]]; then
+        printf 'Note: %s is already archived as "%s"\n' "${sha:0:8}" "$existing_as"
     fi
 
     _bx_write "$store_name" "$sha" "$date"
@@ -320,7 +335,7 @@ cmd_update() {
         esac
     done
 
-    local archived=0 conflicts=0
+    local archived=0 conflicts=0 already_safe=0
     while IFS=$'\t' read -r branch upstream_ref; do
         # Skip if upstream ref exists locally (live remote tracking branch)
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
@@ -350,12 +365,21 @@ cmd_update() {
             continue
         fi
 
+        local existing_as
+        existing_as=$(_bx_lookup_sha "$sha")
+        if [[ -n "$existing_as" ]]; then
+            printf 'Already safe: %s (%s archived as "%s") — skipped\n' "$branch" "${sha:0:8}" "$existing_as"
+            already_safe=$(( already_safe + 1 ))
+            continue
+        fi
+
         [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
         printf 'Archived: %s\n' "$branch"
         archived=$(( archived + 1 ))
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
 
     printf 'Done. Archived %d branch(es)' "$archived"
+    [[ $already_safe -gt 0 ]] && printf ', %d already safe (SHA archived under different name)' "$already_safe" || true
     [[ $conflicts -gt 0 ]] && printf ', %d conflict(s) skipped' "$conflicts" || true
     printf '.\n'
     [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true

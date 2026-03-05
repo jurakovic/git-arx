@@ -242,13 +242,14 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 ### `bx add` — Conflict Detection
 
-Before writing, `add` calls `_bx_lookup_branch` against the target name (which may be a custom archive name). Three outcomes:
+Before writing, `add` calls `_bx_lookup_branch` against the target name (which may be a custom archive name). Four outcomes:
 
 1. **Not archived** — write and report `Archived:`.
 2. **Archived with same SHA** — exit 0 with `Already archived:`. Idempotent; safe to call repeatedly.
 3. **Archived with different SHA** — conflict. Exit 1 with an error and hints. `--force` overwrites; an `archive-name` argument stores under a different name instead.
+4. **Not archived by target name, but SHA already present under a different name** — `_bx_lookup_sha` finds the duplicate. Prints a `Note:` line, then writes anyway (the user explicitly requested this archive entry).
 
-`bx update` applies the same logic for every candidate branch. Conflicts are reported and counted in the summary; `--force` resolves them by overwriting.
+`bx update` applies the same conflict logic for every candidate branch. Additionally, it calls `_bx_lookup_sha` for branches with no existing archive entry: if the current SHA is already stored under a different name, the branch is skipped with an `Already safe:` message and counted separately in the summary. This prevents silent duplicate SHA storage during automatic archiving. If the user wants the branch indexed under its natural name too, they can run `git bx add <branch>` explicitly.
 
 ### `bx rename`
 

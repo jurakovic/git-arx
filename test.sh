@@ -164,6 +164,30 @@ test_add() {
     # archive name conflict
     assert_out   "add: archive name conflict: error"             "conflict"         "$BX" add feature/beta alpha-saved
     assert_fails "add: archive name conflict: nonzero"                              "$BX" add feature/beta alpha-saved
+
+    # SHA already archived under a different name: note shown, still archives
+    reset_archive
+    "$BX" add feature/alpha alpha-saved > /dev/null
+    local dup_out
+    dup_out=$("$BX" add feature/alpha 2>&1)
+    if printf '%s' "$dup_out" | grep -qF "Note:"; then
+        pass "add: SHA duplicate: shows note"
+    else
+        fail "add: SHA duplicate: should show note"
+        printf '      got: %s\n' "$dup_out"
+    fi
+    if printf '%s' "$dup_out" | grep -qF "alpha-saved"; then
+        pass "add: SHA duplicate: note names existing entry"
+    else
+        fail "add: SHA duplicate: note should name existing entry"
+        printf '      got: %s\n' "$dup_out"
+    fi
+    if printf '%s' "$dup_out" | grep -qF "Archived: feature/alpha"; then
+        pass "add: SHA duplicate: still archives"
+    else
+        fail "add: SHA duplicate: should still archive"
+        printf '      got: %s\n' "$dup_out"
+    fi
 }
 
 test_remove() {
@@ -383,6 +407,35 @@ test_update() {
     else
         fail "update: should skip already up-to-date branch silently"
         printf '      got: %s\n' "$skip_out"
+    fi
+
+    # SHA already archived under a different name: skipped with note
+    reset_archive
+    "$BX" add feature/alpha alpha-saved > /dev/null
+    local safe_out
+    safe_out=$("$BX" update 2>&1)
+    if printf '%s' "$safe_out" | grep -qF "Already safe: feature/alpha"; then
+        pass "update: SHA duplicate: reports already safe"
+    else
+        fail "update: SHA duplicate: should report already safe"
+        printf '      got: %s\n' "$safe_out"
+    fi
+    if printf '%s' "$safe_out" | grep -qF "alpha-saved"; then
+        pass "update: SHA duplicate: names the existing entry"
+    else
+        fail "update: SHA duplicate: should name existing entry"
+        printf '      got: %s\n' "$safe_out"
+    fi
+    if printf '%s' "$safe_out" | grep -qF "already safe (SHA archived under different name)"; then
+        pass "update: SHA duplicate: summary notes count"
+    else
+        fail "update: SHA duplicate: summary should note count"
+        printf '      got: %s\n' "$safe_out"
+    fi
+    if ! grep -qF "feature/alpha " .gitarchive 2>/dev/null; then
+        pass "update: SHA duplicate: not archived under natural name"
+    else
+        fail "update: SHA duplicate: should not be archived under natural name"
     fi
 }
 
