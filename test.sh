@@ -288,10 +288,22 @@ test_update() {
     else
         fail "status: shows branch with no upstream"
     fi
-    if printf '%s' "$dry_out" | grep -qF "3 branch(es) would be archived"; then
-        pass "status: reports correct count"
+    if printf '%s' "$dry_out" | grep -qF "STATUS"; then
+        pass "status: shows STATUS column header"
     else
-        fail "status: reports correct count"
+        fail "status: shows STATUS column header"
+        printf '      got: %s\n' "$dry_out"
+    fi
+    if printf '%s' "$dry_out" | grep -qF "SHA"; then
+        pass "status: shows SHA column header"
+    else
+        fail "status: shows SHA column header"
+    fi
+    if printf '%s' "$dry_out" | grep -qF "Not archived"; then
+        pass "status: shows Not archived for unarchived branch"
+    else
+        fail "status: shows Not archived for unarchived branch"
+        printf '      got: %s\n' "$dry_out"
     fi
     if [[ ! -f .gitarchive ]]; then
         pass "status: does not write archive"
@@ -306,6 +318,15 @@ test_update() {
         pass "update: archives branch with no upstream"
     else
         fail "update: archives branch with no upstream"
+    fi
+    # After archiving, status should show "Archived" for those branches
+    local status_after
+    status_after=$("$BX" status 2>&1)
+    if printf '%s' "$status_after" | grep -qF "Archived"; then
+        pass "status: shows Archived for already-archived branch"
+    else
+        fail "status: shows Archived for already-archived branch"
+        printf '      got: %s\n' "$status_after"
     fi
     assert_out "status: shows author (2nd call)" "Test" "$BX" status
     if printf '%s' "$out" | grep -qF "Archived 3 branch(es)"; then
@@ -436,6 +457,57 @@ test_update() {
         pass "update: SHA duplicate: not archived under natural name"
     else
         fail "update: SHA duplicate: should not be archived under natural name"
+    fi
+
+    # status: shows "Archived as" for SHA archived under different name
+    local status_as_out
+    status_as_out=$("$BX" status 2>&1)
+    if printf '%s' "$status_as_out" | grep -qF 'Archived as'; then
+        pass "status: shows Archived as for SHA archived under different name"
+    else
+        fail "status: shows Archived as for SHA archived under different name"
+        printf '      got: %s\n' "$status_as_out"
+    fi
+    if printf '%s' "$status_as_out" | grep -qF "alpha-saved"; then
+        pass "status: Archived as names the existing entry"
+    else
+        fail "status: Archived as should name the existing entry"
+        printf '      got: %s\n' "$status_as_out"
+    fi
+
+    # combined: stale entry for branch (different SHA) AND current SHA archived elsewhere
+    # feature/alpha is at SHA_ALPHA; archive has feature/alpha->SHA_BETA (old) and alpha-saved->SHA_ALPHA
+    printf '# git-bx archive\nalpha-saved %s 2025-01-01T00:00:00+00:00\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' \
+        "$SHA_ALPHA" "$SHA_BETA" > .gitarchive
+
+    local combined_update_out
+    combined_update_out=$("$BX" update 2>&1)
+    if printf '%s' "$combined_update_out" | grep -qF "Already safe: feature/alpha"; then
+        pass "update: conflict+SHA duplicate: reports already safe"
+    else
+        fail "update: conflict+SHA duplicate: should report already safe, not conflict"
+        printf '      got: %s\n' "$combined_update_out"
+    fi
+    if ! printf '%s' "$combined_update_out" | grep -qF "Conflict: feature/alpha"; then
+        pass "update: conflict+SHA duplicate: does not report as conflict"
+    else
+        fail "update: conflict+SHA duplicate: should not report as conflict"
+        printf '      got: %s\n' "$combined_update_out"
+    fi
+
+    local combined_status_out
+    combined_status_out=$("$BX" status 2>&1)
+    if printf '%s' "$combined_status_out" | grep -qF 'Archived as'; then
+        pass "status: conflict+SHA duplicate: shows Archived as"
+    else
+        fail "status: conflict+SHA duplicate: should show Archived as, not Conflict"
+        printf '      got: %s\n' "$combined_status_out"
+    fi
+    if ! printf '%s' "$combined_status_out" | grep -qF "Conflict"; then
+        pass "status: conflict+SHA duplicate: does not show Conflict"
+    else
+        fail "status: conflict+SHA duplicate: should not show Conflict"
+        printf '      got: %s\n' "$combined_status_out"
     fi
 }
 

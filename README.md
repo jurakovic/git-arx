@@ -106,16 +106,25 @@ git bx checkout feature/my-feature
 
 ### `git bx status`
 
-Show which local branches would be archived by `git bx update` — branches with no remote tracking branch — along with their last committer. Nothing is written.
+Show all local branches with no remote upstream — the same set that `git bx update` would process — along with their current SHA, date, author, and archive status. Nothing is written.
 
 ```bash
 git bx status
-# BRANCH                                   AUTHOR
-# ------                                   ------
-# feature/old-idea                         Alice Smith
-# fix/quick-hack                           Bob Jones
-# 2 branch(es) would be archived by "git bx update".
+# BRANCH                                   SHA       DATE         AUTHOR               STATUS
+# ------                                   ---       ----         ------               ------
+# feature/old-idea                         a1b2c3d4  2025-11-15   Alice Smith          Not archived
+# feature/stashed                          f00dface  2025-11-20   Bob Jones            Archived as "feature/stashed-v1"
+# fix/quick-hack                           deadbeef  2025-10-01   Charlie Brown        Archived
 ```
+
+The **STATUS** column reflects the current state of each branch in the archive:
+
+| Status | Meaning |
+|---|---|
+| `Not archived` | Not in the archive — `update` would archive this branch. |
+| `Archived` | Already in the archive with the same SHA — `update` would skip it. |
+| `Archived as "<name>"` | SHA is already archived under a different name — `update` would skip it. |
+| `Conflict (archived: <sha>)` | In the archive under this name but with a different SHA — `update` would skip it unless `--force`. |
 
 Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git bx update` to write the archive.
 

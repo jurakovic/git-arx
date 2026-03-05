@@ -354,9 +354,16 @@ cmd_update() {
                 continue  # already up to date
             fi
             if [[ $force -eq 0 ]]; then
-                printf 'Conflict: %s (archived: %s, current: %s) — skipped\n' \
-                    "$branch" "${existing_sha:0:8}" "${sha:0:8}"
-                conflicts=$(( conflicts + 1 ))
+                local existing_as_conflict
+                existing_as_conflict=$(_bx_lookup_sha "$sha")
+                if [[ -n "$existing_as_conflict" ]]; then
+                    printf 'Already safe: %s (%s archived as "%s") — skipped\n' "$branch" "${sha:0:8}" "$existing_as_conflict"
+                    already_safe=$(( already_safe + 1 ))
+                else
+                    printf 'Conflict: %s (archived: %s, current: %s) — skipped\n' \
+                        "$branch" "${existing_sha:0:8}" "${sha:0:8}"
+                    conflicts=$(( conflicts + 1 ))
+                fi
                 continue
             fi
             [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
@@ -387,27 +394,49 @@ cmd_update() {
 }
 
 cmd_status() {
-    local -a lines=()
+    local -a rows=()
     while IFS=$'\t' read -r branch upstream_ref; do
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
-        local author
+
+        local sha date author status existing_entry existing_sha existing_as
+        sha=$(git rev-parse "refs/heads/${branch}")
+        date=$(git log -1 --format=%aI "refs/heads/${branch}")
         author=$(git log -1 --format=%an "refs/heads/${branch}")
-        lines+=("$(printf '%-40s %s' "$branch" "$author")")
+
+        existing_entry=$(_bx_lookup_branch "$branch")
+        existing_sha=""
+        [[ -n "$existing_entry" ]] && existing_sha=$(printf '%s' "$existing_entry" | awk '{print $1}') || true
+
+        if [[ "$existing_sha" == "$sha" ]]; then
+            status="Archived"
+        else
+            existing_as=$(_bx_lookup_sha "$sha")
+            if [[ -n "$existing_as" ]]; then
+                status="Archived as \"${existing_as}\""
+            elif [[ -n "$existing_sha" ]]; then
+                status="Conflict (archived: ${existing_sha:0:8})"
+            else
+                status="Not archived"
+            fi
+        fi
+
+        rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$branch" "${sha:0:8}" "${date:0:10}" "$author" "$status")")
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
 
-    if [[ ${#lines[@]} -eq 0 ]]; then
-        printf 'No branches to archive.\n'
+    if [[ ${#rows[@]} -eq 0 ]]; then
+        printf 'No local branches without a remote upstream.\n'
         return 0
     fi
 
-    printf '%-40s %s\n' "BRANCH" "AUTHOR"
-    printf '%-40s %s\n' "------" "------"
-    for line in "${lines[@]}"; do
-        printf '%s\n' "$line"
+    printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
+    printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
+    local b s d a st
+    for row in "${rows[@]}"; do
+        IFS=$'\t' read -r b s d a st <<< "$row"
+        printf '%-40s %-9s %-12s %-20s %s\n' "$b" "$s" "$d" "$a" "$st"
     done
-    printf '%d branch(es) would be archived by "git bx update".\n' "${#lines[@]}"
 }
 
 cmd_list() {

@@ -238,7 +238,7 @@ This approach is more robust than checking `%(upstream:track)` for the string `[
 
 Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches. Using `%(upstream)` (the full ref) and checking whether that ref resolves correctly handles both the "never had a remote" and "remote was deleted" cases.
 
-`bx update` writes the archive for each candidate. `bx status` runs the same detection but only prints the branch name and author — nothing is written.
+`bx update` writes the archive for each candidate. `bx status` runs the same detection and, for each candidate branch, also calls `_bx_lookup_branch` and `_bx_lookup_sha` to determine its archive state — producing a STATUS column (`Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`). Nothing is written.
 
 ### `bx add` — Conflict Detection
 
