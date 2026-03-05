@@ -238,7 +238,25 @@ This approach is more robust than checking `%(upstream:track)` for the string `[
 
 Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches. Using `%(upstream)` (the full ref) and checking whether that ref resolves correctly handles both the "never had a remote" and "remote was deleted" cases.
 
-`bx update` writes the archive for each candidate. `bx status` runs the same detection and, for each candidate branch, also calls `_bx_lookup_branch` and `_bx_lookup_sha` to determine its archive state — producing a STATUS column (`Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`). Nothing is written.
+`bx update` writes the archive for each candidate. `bx status` runs the same detection and determines each branch's archive state (`Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`). Nothing is written.
+
+### `bx status` — Performance
+
+For repos with many branches, naive per-branch `git rev-parse` and `git log` calls add up quickly. `bx status` avoids this with two bulk operations up front:
+
+1. **Archive loaded once** — `_bx_read_all` is called once and its output is stored in two in-memory associative arrays: `arc_by_name[branch]=sha` and `arc_by_sha[sha]=name`. All per-branch archive lookups are then O(1) bash hash table reads instead of O(n) subprocess calls.
+
+2. **Single `git for-each-ref` call** — a single call retrieves branch name, SHA, author date, and author name for every branch at once, replacing per-branch `git rev-parse` and `git log` calls:
+
+```bash
+git for-each-ref \
+    --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(authorname)%09%(upstream)' \
+    refs/heads/
+```
+
+**`%(upstream)` must be last.** Tab (`%09`) is an IFS whitespace character. When `%(upstream)` is empty, it produces two consecutive tabs. Because IFS whitespace collapses, `read` treats `<TAB><TAB>` as a single separator — the empty field disappears and all subsequent fields shift left. Placing `%(upstream)` last avoids this: the trailing tab is stripped cleanly, and `upstream_ref` is assigned an empty string, which is the correct behaviour.
+
+**`set -u` and associative arrays.** Accessing a missing key in an associative array with `set -u` enabled triggers an "unbound variable" error in bash 4.x. All array reads use `${arr[key]:-}` to provide an explicit empty-string default and suppress the error.
 
 ### `bx add` — Conflict Detection
 

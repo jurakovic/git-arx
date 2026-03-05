@@ -394,25 +394,32 @@ cmd_update() {
 }
 
 cmd_status() {
+    # Load entire archive once into associative arrays for O(1) lookup,
+    # avoiding repeated _bx_read_all calls inside the branch loop.
+    declare -A arc_by_name arc_by_sha
+    while IFS=' ' read -r b sha date rest; do
+        arc_by_name["$b"]="$sha"
+        [[ -z "${arc_by_sha[$sha]:-}" ]] && arc_by_sha["$sha"]="$b" || true
+    done < <(_bx_read_all)
+
     local -a rows=()
-    while IFS=$'\t' read -r branch upstream_ref; do
+    # Single for-each-ref call fetches SHA, date, author, and upstream for
+    # all branches at once — replaces per-branch git rev-parse + git log calls.
+    # NOTE: %(upstream) must be LAST. Tab is IFS whitespace, so consecutive
+    # tabs collapse — a mid-format empty %(upstream) would shift all following
+    # fields left. Placing it last lets bash strip the trailing tab cleanly.
+    while IFS=$'\t' read -r branch sha date author upstream_ref; do
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
 
-        local sha date author status existing_entry existing_sha existing_as
-        sha=$(git rev-parse "refs/heads/${branch}")
-        date=$(git log -1 --format=%aI "refs/heads/${branch}")
-        author=$(git log -1 --format=%an "refs/heads/${branch}")
-
-        existing_entry=$(_bx_lookup_branch "$branch")
-        existing_sha=""
-        [[ -n "$existing_entry" ]] && existing_sha=$(printf '%s' "$existing_entry" | awk '{print $1}') || true
+        local status existing_sha existing_as
+        existing_sha="${arc_by_name[$branch]:-}"
 
         if [[ "$existing_sha" == "$sha" ]]; then
             status="Archived"
         else
-            existing_as=$(_bx_lookup_sha "$sha")
+            existing_as="${arc_by_sha[$sha]:-}"
             if [[ -n "$existing_as" ]]; then
                 status="Archived as \"${existing_as}\""
             elif [[ -n "$existing_sha" ]]; then
@@ -423,7 +430,9 @@ cmd_status() {
         fi
 
         rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$branch" "${sha:0:8}" "${date:0:10}" "$author" "$status")")
-    done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
+    done < <(git for-each-ref \
+        --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(authorname)%09%(upstream)' \
+        refs/heads/)
 
     if [[ ${#rows[@]} -eq 0 ]]; then
         printf 'No local branches without a remote upstream.\n'
