@@ -240,6 +240,20 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 `bx update` writes the archive for each candidate. `bx status` runs the same detection but only prints the branch name and author — nothing is written.
 
+### `bx add` — Conflict Detection
+
+Before writing, `add` calls `_bx_lookup_branch` against the target name (which may be a custom archive name). Three outcomes:
+
+1. **Not archived** — write and report `Archived:`.
+2. **Archived with same SHA** — exit 0 with `Already archived:`. Idempotent; safe to call repeatedly.
+3. **Archived with different SHA** — conflict. Exit 1 with an error and hints. `--force` overwrites; an `archive-name` argument stores under a different name instead.
+
+`bx update` applies the same logic for every candidate branch. Conflicts are reported and counted in the summary; `--force` resolves them by overwriting.
+
+### `bx rename`
+
+Implemented as `_bx_write(new) + _bx_delete(old)` — the abstraction layer fans out to all enabled backends automatically. There is no dedicated rename primitive in either backend; write-then-delete is equivalent.
+
 ### `bx log` — Argument Passthrough
 
 ```bash
@@ -305,3 +319,4 @@ Non-conflicting entries are always processed. A conflict does not block other en
 - **`merge` does not resolve SHA conflicts.** When the same branch appears in two files with different SHAs, the conflict is reported and the entry is skipped. The user must manually decide which SHA is correct and edit the output file. There is no `--force-file` / `--force-refs` equivalent for `merge` (unlike `sync`) because `merge` has no concept of a "primary" source.
 - **`push/pull` hardcodes `origin`.** The remote name is not configurable. This could be added via `bx.remote` config in a future version.
 - **No autocomplete.** Branch name tab-completion for `add`, `remove`, `log`, `checkout` is not implemented. Shell completion scripts (bash/zsh/fish) would be a useful addition.
+- **Ref namespace collisions.** Git ref names are hierarchical. Archiving a branch named `update` creates `refs/bx/update` as a file. Archiving `update/packages` needs `refs/bx/update/` to be a directory — the two cannot coexist. If this occurs, use `git bx rename update update-legacy` to free up the name before archiving the slashed branch.

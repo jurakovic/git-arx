@@ -131,6 +131,39 @@ test_add() {
     assert_fails "add: nonexistent: nonzero"                                "$BX" add no-such-branch
     assert_out   "add: no arg: usage"           "Usage:"                    "$BX" add
     assert_fails "add: no arg: nonzero"                                     "$BX" add
+
+    # same SHA: idempotent
+    assert_out   "add: same SHA: already archived"  "Already archived"  "$BX" add feature/alpha
+    assert_ok    "add: same SHA: exits 0"                               "$BX" add feature/alpha
+
+    # conflict: different SHA already in archive
+    reset_archive
+    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
+
+    assert_out   "add: conflict: error message"      "conflict"            "$BX" add feature/alpha
+    assert_out   "add: conflict: shows old SHA"      "${SHA_BETA:0:8}"     "$BX" add feature/alpha
+    assert_out   "add: conflict: hints --force"      "force"               "$BX" add feature/alpha
+    assert_fails "add: conflict: nonzero"                                  "$BX" add feature/alpha
+
+    # --force: overwrites conflict
+    assert_out   "add: --force: archived"            "Archived"            "$BX" add feature/alpha --force
+    local stored
+    stored=$(grep "^feature/alpha " .gitarchive | awk '{print $2}')
+    if [[ "$stored" == "$SHA_ALPHA" ]]; then
+        pass "add: --force: stored correct SHA"
+    else
+        fail "add: --force: wrong SHA (got ${stored:0:8}, want ${SHA_ALPHA:0:8})"
+    fi
+
+    # archive name: archive under a different name
+    reset_archive
+    assert_out   "add: archive name: archived with archive name label"  "Archived: feature/alpha (as alpha-saved)"  \
+        "$BX" add feature/alpha alpha-saved
+    assert_out   "add: archive name: name in archive"            "alpha-saved"      "$BX" list
+
+    # archive name conflict
+    assert_out   "add: archive name conflict: error"             "conflict"         "$BX" add feature/beta alpha-saved
+    assert_fails "add: archive name conflict: nonzero"                              "$BX" add feature/beta alpha-saved
 }
 
 test_remove() {
@@ -168,6 +201,55 @@ test_list() {
     assert_fails "list: --storage=refs (file-only)" "$BX" list --storage=refs
     assert_out   "list: --storage=bogus: error"   "invalid --storage value" "$BX" list --storage=bogus
     assert_fails "list: unknown option: nonzero"  "$BX" list --bogus
+}
+
+test_rename() {
+    section "rename"
+    reset_archive
+    "$BX" add feature/alpha > /dev/null
+    "$BX" add feature/beta  > /dev/null
+
+    assert_out   "rename: succeeds"              "Renamed: feature/alpha -> alpha-old"  "$BX" rename feature/alpha alpha-old
+    assert_out   "rename: no arg: usage"         "Usage:"                               "$BX" rename
+    assert_fails "rename: no arg: nonzero"                                              "$BX" rename
+    assert_out   "rename: missing: error"        "not found in archive"                 "$BX" rename no-such x
+    assert_fails "rename: missing: nonzero"                                             "$BX" rename no-such x
+    assert_out   "rename: same name: error"      "identical"                            "$BX" rename feature/beta feature/beta
+    assert_fails "rename: same name: nonzero"                                           "$BX" rename feature/beta feature/beta
+    assert_out   "rename: target exists: error"  "already exists"                       "$BX" rename feature/beta alpha-old
+    assert_fails "rename: target exists: nonzero"                                       "$BX" rename feature/beta alpha-old
+
+    local list_out
+    list_out=$("$BX" list 2>&1)
+    if printf '%s' "$list_out" | grep -qF "alpha-old"; then
+        pass "rename: new name appears in list"
+    else
+        fail "rename: new name should appear in list"
+    fi
+    if ! printf '%s' "$list_out" | grep -qF "feature/alpha "; then
+        pass "rename: old name gone from list"
+    else
+        fail "rename: old name should be gone"
+    fi
+
+    # refs backend
+    set_storage refs
+    reset_archive
+    set_storage refs
+    "$BX" add feature/alpha > /dev/null
+    "$BX" rename feature/alpha alpha-renamed > /dev/null
+    if git rev-parse --verify refs/bx/alpha-renamed > /dev/null 2>&1; then
+        pass "rename refs: new ref exists"
+    else
+        fail "rename refs: new ref should exist"
+    fi
+    if ! git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+        pass "rename refs: old ref gone"
+    else
+        fail "rename refs: old ref should be gone"
+    fi
+
+    set_storage file
 }
 
 test_update() {
@@ -249,6 +331,59 @@ test_update() {
     fi
 
     assert_fails "update: unknown option: nonzero" "$BX" update --bogus
+
+    # conflict: already archived with a different SHA
+    reset_archive
+    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
+
+    local conflict_out
+    conflict_out=$("$BX" update 2>&1) || true
+    if printf '%s' "$conflict_out" | grep -qF "Conflict: feature/alpha"; then
+        pass "update: reports conflict for different SHA"
+    else
+        fail "update: should report conflict"
+        printf '      got: %s\n' "$conflict_out"
+    fi
+    if printf '%s' "$conflict_out" | grep -qF "1 conflict(s) skipped"; then
+        pass "update: reports conflict count in summary"
+    else
+        fail "update: should report conflict count"
+        printf '      got: %s\n' "$conflict_out"
+    fi
+    # file should still have the old (conflicting) SHA
+    if grep -qF "$SHA_BETA" .gitarchive; then
+        pass "update: does not overwrite conflict without --force"
+    else
+        fail "update: should not overwrite conflict"
+    fi
+
+    # --force: overwrites conflicts
+    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
+    local force_out
+    force_out=$("$BX" update --force 2>&1)
+    if printf '%s' "$force_out" | grep -qF "Updated: feature/alpha"; then
+        pass "update --force: overwrites conflict"
+    else
+        fail "update --force: should overwrite conflict"
+        printf '      got: %s\n' "$force_out"
+    fi
+    if grep -qF "$SHA_ALPHA" .gitarchive; then
+        pass "update --force: stored correct SHA"
+    else
+        fail "update --force: wrong SHA in archive"
+    fi
+
+    # already up to date: silently skipped
+    reset_archive
+    "$BX" add feature/alpha > /dev/null
+    local skip_out
+    skip_out=$("$BX" update 2>&1)
+    if ! printf '%s' "$skip_out" | grep -qF "feature/alpha"; then
+        pass "update: silently skips already up-to-date branch"
+    else
+        fail "update: should skip already up-to-date branch silently"
+        printf '      got: %s\n' "$skip_out"
+    fi
 }
 
 test_log() {
@@ -729,6 +864,7 @@ main() {
     test_help
     test_add
     test_remove
+    test_rename
     test_list
     test_update
     test_log

@@ -134,14 +134,23 @@ git bx update
 
 Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches whose upstream was deleted on the remote (shown as `[gone]` in `git branch -vv`) are archived.
 
+Branches that already have the same SHA in the archive are silently skipped. Branches with a **different** SHA in the archive are reported as conflicts and skipped — use `--force` to overwrite them.
+
+```
+Conflict: feature/my-feature (archived: a1b2c3d4, current: deadbeef) — skipped
+Done. Archived 2 branch(es), 1 conflict(s) skipped.
+```
+
 **Options:**
 
 | Option | Description |
 |---|---|
-| `--dry-run` | Show which branches would be archived without writing anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
+| `--force`, `-f` | Overwrite archived entries whose SHA has changed. Outputs `Updated:` instead of `Archived:` for those branches. |
+| `--dry-run` | Show which branches would be archived or conflict without writing anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
 
 ```bash
 git bx update --dry-run
+git bx update --force
 ```
 
 Run `git bx prune` to delete the archived branches from your local repo.
@@ -249,7 +258,7 @@ If a local branch with the same name already exists, the command exits with an e
 
 ---
 
-### `git bx add <branch>`
+### `git bx add <branch> [archive-name] [--force]`
 
 Archive a single branch manually. Stores its name and current HEAD SHA.
 
@@ -258,7 +267,34 @@ git bx add feature/my-feature
 # Archived: feature/my-feature at a1b2c3d4
 ```
 
-If the branch is already in the archive, this updates its record to the current HEAD.
+If the branch is already in the archive with the **same SHA**, the command succeeds silently:
+
+```
+Already archived: feature/my-feature at a1b2c3d4
+```
+
+If the branch is already in the archive with a **different SHA** (a conflict), the command exits with an error and suggests two options:
+
+```
+git-bx: conflict: "feature/my-feature" is already archived at a1b2c3d4 (current: deadbeef)
+To overwrite:                  git bx add feature/my-feature --force
+To archive under a new name:   git bx add feature/my-feature <alias>
+```
+
+**Options and arguments:**
+
+| Argument / Option | Description |
+|---|---|
+| `archive-name` | Archive under this name instead of the branch name. Useful when an existing archive entry would conflict. |
+| `--force`, `-f` | Overwrite an existing archive entry, even if the SHA differs. |
+
+```bash
+# Overwrite the existing archive entry
+git bx add feature/my-feature --force
+
+# Store under a different name to avoid conflict
+git bx add feature/my-feature feature/my-feature-old
+```
 
 ---
 
@@ -272,6 +308,30 @@ git bx remove feature/my-feature
 ```
 
 This does not delete the local branch — only removes it from the archive.
+
+---
+
+### `git bx rename <old-name> <new-name>`
+
+Rename an archived branch. Updates the entry in all enabled backends.
+
+```bash
+git bx rename feature/my-feature feature/my-feature-v1
+# Renamed: feature/my-feature -> feature/my-feature-v1
+```
+
+The command exits with an error if the old name is not in the archive, or if the new name already exists.
+
+**Why this is useful — git ref namespace collisions:**
+
+The refs backend stores entries as git refs under `refs/bx/<branch-name>`. Because git refs are hierarchical (stored as files in a directory tree), a branch named `update` stored as `refs/bx/update` and a branch named `update/packages` stored as `refs/bx/update/packages` cannot coexist — `refs/bx/update` is either a file or a directory, not both.
+
+If this situation arises, rename the existing shorter entry first:
+
+```bash
+git bx rename update update-legacy
+git bx add update/packages   # now refs/bx/update/ can be created
+```
 
 ---
 

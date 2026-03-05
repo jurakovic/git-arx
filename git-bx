@@ -209,8 +209,21 @@ _bx_sha_exists() {
 # --- COMMANDS ----------------------------------------------------------------
 
 cmd_add() {
-    local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bx add <branch>\n' >&2; exit 1; }
+    local branch="" archive_name="" force=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force|-f) force=1 ;;
+            --*) printf 'git-bx: unknown option "%s"\n' "$1" >&2; exit 1 ;;
+            *)
+                if [[ -z "$branch" ]]; then branch="$1"
+                elif [[ -z "$archive_name" ]]; then archive_name="$1"
+                else printf 'git-bx: unexpected argument "%s"\n' "$1" >&2; exit 1
+                fi ;;
+        esac
+        shift
+    done
+
+    [[ -z "$branch" ]] && { printf 'Usage: git bx add <branch> [archive-name] [--force]\n' >&2; exit 1; }
 
     if ! git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
         printf 'git-bx: branch "%s" not found in local branches\n' "$branch" >&2
@@ -221,8 +234,33 @@ cmd_add() {
     sha=$(git rev-parse "refs/heads/${branch}")
     date=$(git log -1 --format=%aI "refs/heads/${branch}")
 
-    _bx_write "$branch" "$sha" "$date"
-    printf 'Archived: %s at %s\n' "$branch" "${sha:0:8}"
+    local store_name="${archive_name:-$branch}"
+
+    local existing_entry existing_sha
+    existing_entry=$(_bx_lookup_branch "$store_name")
+    if [[ -n "$existing_entry" ]]; then
+        existing_sha=$(printf '%s' "$existing_entry" | awk '{print $1}')
+        if [[ "$existing_sha" == "$sha" ]]; then
+            printf 'Already archived: %s at %s\n' "$store_name" "${sha:0:8}"
+            return 0
+        fi
+        if [[ $force -eq 0 ]]; then
+            printf 'git-bx: conflict: "%s" is already archived at %s (current: %s)\n' \
+                "$store_name" "${existing_sha:0:8}" "${sha:0:8}" >&2
+            printf 'To overwrite:                  git bx add %s --force\n' "$branch" >&2
+            if [[ -z "$archive_name" ]]; then
+                printf 'To archive under a new name:   git bx add %s <archive-name>\n' "$branch" >&2
+            fi
+            exit 1
+        fi
+    fi
+
+    _bx_write "$store_name" "$sha" "$date"
+    if [[ -n "$archive_name" ]]; then
+        printf 'Archived: %s (as %s) at %s\n' "$branch" "$store_name" "${sha:0:8}"
+    else
+        printf 'Archived: %s at %s\n' "$store_name" "${sha:0:8}"
+    fi
 }
 
 cmd_remove() {
@@ -240,32 +278,88 @@ cmd_remove() {
     printf 'Removed: %s\n' "$branch"
 }
 
+cmd_rename() {
+    local old_name="${1:-}" new_name="${2:-}"
+    if [[ -z "$old_name" || -z "$new_name" ]]; then
+        printf 'Usage: git bx rename <old-name> <new-name>\n' >&2; exit 1
+    fi
+    if [[ "$old_name" == "$new_name" ]]; then
+        printf 'git-bx: old and new names are identical\n' >&2; exit 1
+    fi
+
+    local entry
+    entry=$(_bx_lookup_branch "$old_name")
+    if [[ -z "$entry" ]]; then
+        printf 'git-bx: branch "%s" not found in archive\n' "$old_name" >&2
+        exit 1
+    fi
+
+    local existing
+    existing=$(_bx_lookup_branch "$new_name")
+    if [[ -n "$existing" ]]; then
+        printf 'git-bx: "%s" already exists in archive\n' "$new_name" >&2
+        exit 1
+    fi
+
+    local sha date
+    sha=$(printf '%s' "$entry" | awk '{print $1}')
+    date=$(printf '%s' "$entry" | awk '{print $2}')
+
+    _bx_write "$new_name" "$sha" "$date"
+    _bx_delete "$old_name"
+    printf 'Renamed: %s -> %s\n' "$old_name" "$new_name"
+}
+
 cmd_update() {
-    local dry_run=0
+    local dry_run=0 force=0
     for arg in "$@"; do
         case "$arg" in
-            --dry-run) dry_run=1 ;;
+            --dry-run)  dry_run=1 ;;
+            --force|-f) force=1 ;;
             *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
-    local archived=0
+    local archived=0 conflicts=0
     while IFS=$'\t' read -r branch upstream_ref; do
         # Skip if upstream ref exists locally (live remote tracking branch)
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
-        if [[ $dry_run -eq 0 ]]; then
-            local sha date
-            sha=$(git rev-parse "refs/heads/${branch}")
-            date=$(git log -1 --format=%aI "refs/heads/${branch}")
-            _bx_write "$branch" "$sha" "$date"
+
+        local sha date
+        sha=$(git rev-parse "refs/heads/${branch}")
+        date=$(git log -1 --format=%aI "refs/heads/${branch}")
+
+        local existing_entry existing_sha
+        existing_entry=$(_bx_lookup_branch "$branch")
+        if [[ -n "$existing_entry" ]]; then
+            existing_sha=$(printf '%s' "$existing_entry" | awk '{print $1}')
+            if [[ "$existing_sha" == "$sha" ]]; then
+                continue  # already up to date
+            fi
+            if [[ $force -eq 0 ]]; then
+                printf 'Conflict: %s (archived: %s, current: %s) — skipped\n' \
+                    "$branch" "${existing_sha:0:8}" "${sha:0:8}"
+                conflicts=$(( conflicts + 1 ))
+                continue
+            fi
+            [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
+            printf 'Updated: %s at %s\n' "$branch" "${sha:0:8}"
+            archived=$(( archived + 1 ))
+            continue
         fi
+
+        [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
         printf 'Archived: %s\n' "$branch"
         archived=$(( archived + 1 ))
     done < <(git for-each-ref --format='%(refname:short)%09%(upstream)' refs/heads/)
-    printf 'Done. Archived %d branch(es).\n' "$archived"
+
+    printf 'Done. Archived %d branch(es)' "$archived"
+    [[ $conflicts -gt 0 ]] && printf ', %d conflict(s) skipped' "$conflicts" || true
+    printf '.\n'
     [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true
+    [[ $conflicts -gt 0 ]] && exit 1 || true
 }
 
 cmd_status() {
@@ -683,10 +777,11 @@ USAGE
   git bx <command> [options]
 
 COMMANDS
-  add <branch>                  Archive a single branch
-  remove <branch>               Remove a branch from the archive
-  status                        Show branches that would be archived by update
-  update [--dry-run]            Archive all local branches with no upstream
+  add <branch> [archive-name] [--force]  Archive a single branch
+  remove <branch>                 Remove a branch from the archive
+  rename <old> <new>              Rename an archived branch
+  status                          Show branches that would be archived by update
+  update [--force] [--dry-run]    Archive all local branches with no upstream
   list [--sort=name|date]       List archived branches
        [--order=asc|desc]
        [--storage=file|refs|both]
@@ -720,7 +815,11 @@ OTHER CONFIG
 
 EXAMPLES
   git bx add feature/my-feature
+  git bx add feature/my-feature --force
+  git bx add feature/my-feature feature/my-feature-old
+  git bx rename feature/my-feature feature/my-feature-v1
   git bx update
+  git bx update --force
   git bx list --sort=date --order=desc
   git bx log feature/my-feature --oneline -10
   git bx checkout feature/my-feature
@@ -742,6 +841,7 @@ main() {
     case "$cmd" in
         add)      cmd_add "$@" ;;
         remove)   cmd_remove "$@" ;;
+        rename)   cmd_rename "$@" ;;
         status)   cmd_status "$@" ;;
         update)   cmd_update "$@" ;;
         list)     cmd_list "$@" ;;
