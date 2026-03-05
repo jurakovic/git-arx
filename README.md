@@ -619,7 +619,7 @@ git config bx.storerefs false
 
 ## Notes
 
-- `git bx add` on an already-archived branch updates the record to the current HEAD — it does not duplicate the entry.
+- `git bx add` never creates duplicate entries — the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
 
 ---

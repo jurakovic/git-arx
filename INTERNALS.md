@@ -8,7 +8,7 @@ For end-user documentation, see [README.md](README.md).
 
 ## Overview
 
-`git-bx` is a single self-contained bash script (~330 lines). There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
+`git-bx` is a single self-contained bash script (~950 lines). There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
 
 ```
 # --- CONFIG HELPERS ---
@@ -128,6 +128,14 @@ Writes to all enabled backends. When both are enabled, writes to file first, the
 ### `_bx_delete(branch)`
 
 Removes from all enabled backends. When both are enabled, removes from file first, then refs.
+
+### Helper Functions
+
+Several helper functions are defined between the abstraction layer and the commands:
+
+- `_bx_lookup_branch(branch)` — calls `_bx_read_all` and returns `sha date` for the named branch.
+- `_bx_sha_exists(sha)` — checks object existence via `git cat-file -e`; used by `log` and `checkout` before operating on an archived SHA.
+- `_bx_lookup_sha(sha)` — reverse-lookup: scans `_bx_read_all` output for all entries matching the target SHA. Used by `bx add` to detect when a commit is already archived under a different name. `bx update` uses the in-memory `arc_by_sha` map instead (see Performance section).
 
 ---
 
@@ -313,6 +321,15 @@ fi
 ```
 
 `git cat-file -e <object>` exits 0 if the object exists in the object store, non-zero otherwise. It does not print anything. This is the correct low-level check — it works for any object type (commit, tree, blob) and does not require the object to be reachable.
+
+### `bx prune`
+
+Finds all archived branches that still exist as local branches, then deletes them.
+
+Key behaviors:
+- The currently checked-out branch is always skipped (git would reject the deletion anyway). It is listed separately in the output with a "Skipped (currently checked out)" notice.
+- Without `--force`, the full list is printed and the user must type `"yes"` to proceed. This is intentional — `git branch -D` is irreversible from git's perspective (the archive is the only recovery path).
+- `--dry-run` prints the same list and count as a real run but skips the confirmation prompt and does not delete anything.
 
 ### `bx sync` — Union Merge Algorithm
 
