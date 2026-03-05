@@ -46,13 +46,21 @@ assert_out() {      # label pattern cmd...
 
 section() { printf '\n=== %s ===\n' "$1"; }
 
+set_storage() {
+    case "$1" in
+        file) git config bx.storefile true  && git config bx.storerefs false ;;
+        refs) git config bx.storerefs true  && git config bx.storefile false ;;
+        both) git config bx.storerefs true  && git config bx.storefile true  ;;
+    esac
+}
+
 reset_archive() {
     cd "$REPO"
     rm -f .gitarchive
     git for-each-ref --format='%(refname)' 'refs/bx/' | while read -r ref; do
         git update-ref -d "$ref"
     done
-    git config bx.storage file
+    set_storage file
 }
 
 recreate_branches() {
@@ -92,7 +100,7 @@ setup() {
     SHA_GAMMA=$(git rev-parse refs/heads/fix/gamma)
 
     git checkout "$DEFAULT_BRANCH" -q
-    git config bx.storage file
+    set_storage file
 }
 
 teardown() {
@@ -331,16 +339,16 @@ test_merge() {
     fi
 
     # Wrong backend
-    git config bx.storage refs
+    set_storage refs
     assert_out   "merge: requires file storage" "requires file storage" "$BX" merge "$f1" "$f2" -o "$fo"
     assert_fails "merge: nonzero when refs-only"                        "$BX" merge "$f1" "$f2" -o "$fo"
-    git config bx.storage file
+    set_storage file
 }
 
 test_refs_backend() {
     section "refs backend"
     reset_archive
-    git config bx.storage refs
+    set_storage refs
 
     assert_out "refs add: archives" "Archived: feature/alpha" "$BX" add feature/alpha
 
@@ -359,13 +367,13 @@ test_refs_backend() {
         fail "refs: ref should be removed"
     fi
 
-    git config bx.storage file
+    set_storage file
 }
 
 test_both_backend() {
     section "both backend (write fan-out)"
     reset_archive
-    git config bx.storage both
+    set_storage both
 
     "$BX" add feature/alpha > /dev/null
 
@@ -393,13 +401,13 @@ test_both_backend() {
         fail "both: should delete from refs"
     fi
 
-    git config bx.storage file
+    set_storage file
 }
 
 test_push_pull() {
     section "push / pull (refs backend)"
     reset_archive
-    git config bx.storage refs
+    set_storage refs
 
     "$BX" add feature/alpha > /dev/null
     "$BX" add feature/beta  > /dev/null
@@ -420,7 +428,7 @@ test_push_pull() {
     cd "$repo2"
     git config user.email "test@example.com"
     git config user.name "Test"
-    git config bx.storage refs
+    set_storage refs
 
     assert_ok "pull: succeeds in fresh clone" "$BX" pull
 
@@ -431,7 +439,7 @@ test_push_pull() {
     fi
 
     # pull with both storage → also syncs to .gitarchive
-    git config bx.storage both
+    set_storage both
     "$BX" pull > /dev/null 2>&1 || true
     if [[ -f .gitarchive ]] && grep -qF "feature/alpha" .gitarchive; then
         pass "pull (both): syncs to .gitarchive"
@@ -440,13 +448,13 @@ test_push_pull() {
     fi
 
     cd "$REPO"
-    git config bx.storage file
+    set_storage file
 }
 
 test_sync() {
     section "sync (both backend)"
     reset_archive
-    git config bx.storage both
+    set_storage both
 
     # File-only drift
     printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
@@ -469,7 +477,7 @@ test_sync() {
 
     # Refs-only drift
     reset_archive
-    git config bx.storage both
+    set_storage both
     git update-ref "refs/bx/feature/beta" "$SHA_BETA"
 
     out=$("$BX" sync --check 2>&1)
@@ -489,7 +497,7 @@ test_sync() {
 
     # SHA conflict
     reset_archive
-    git config bx.storage both
+    set_storage both
     printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
     git update-ref "refs/bx/feature/alpha" "$SHA_BETA"  # intentionally different
 
@@ -512,7 +520,7 @@ test_sync() {
 
     # --force-refs: file should be overwritten with refs' SHA
     reset_archive
-    git config bx.storage both
+    set_storage both
     printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
     git update-ref "refs/bx/feature/alpha" "$SHA_BETA"
     "$BX" sync --force-refs > /dev/null
@@ -523,15 +531,15 @@ test_sync() {
     fi
 
     # sync requires both
-    git config bx.storage file
+    set_storage file
     assert_out   "sync: error when file-only" "requires both storage" "$BX" sync
     assert_fails "sync: nonzero when file-only"                       "$BX" sync
 
-    git config bx.storage refs
+    set_storage refs
     assert_out   "sync: error when refs-only" "requires both storage" "$BX" sync
     assert_fails "sync: nonzero when refs-only"                       "$BX" sync
 
-    git config bx.storage file
+    set_storage file
 }
 
 test_slashed_branches() {
@@ -541,7 +549,7 @@ test_slashed_branches() {
     "$BX" add feature/alpha > /dev/null
     assert_out "slash: in file list" "feature/alpha" "$BX" list
 
-    git config bx.storage refs
+    set_storage refs
     "$BX" add feature/alpha > /dev/null
     if git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
         pass "slash: correct ref path refs/bx/feature/alpha"
@@ -549,7 +557,7 @@ test_slashed_branches() {
         fail "slash: should be at refs/bx/feature/alpha"
     fi
 
-    git config bx.storage file
+    set_storage file
 }
 
 test_double_add() {
@@ -582,16 +590,16 @@ test_error_cases() {
     assert_fails "not-in-repo: nonzero" \
         bash -c "cd '$notrepo' && '$BX' list"
 
-    git config bx.storage file
+    set_storage file
     assert_out   "push: requires refs" "requires refs storage" "$BX" push
     assert_out   "pull: requires refs" "requires refs storage" "$BX" pull
     assert_out   "sync: requires both" "requires both storage" "$BX" sync
 
-    git config bx.storage refs
+    set_storage refs
     assert_out   "merge: requires file" "requires file storage" \
         "$BX" merge /dev/null /dev/null -o /dev/null
 
-    git config bx.storage file
+    set_storage file
 }
 
 # ---------------------------------------------------------------------------

@@ -276,7 +276,7 @@ git bx merge .gitarchive /backup/.gitarchive -o merged.gitarchive
 - Entries present in both files with the **same SHA** are deduplicated.
 - Entries present in both files with **different SHAs** are reported as conflicts and skipped — they will not appear in the output.
 
-Requires `file` storage to be enabled.
+Requires `bx.storefile` to be enabled.
 
 ---
 
@@ -299,13 +299,13 @@ git bx push --dry-run
 # (dry run — no changes written)
 ```
 
-Requires `refs` storage to be enabled.
+Requires `bx.storerefs` to be enabled.
 
 ---
 
 ### `git bx pull`
 
-Fetch archived refs from the remote. If `both` storage is configured, the `.gitarchive` file is automatically updated to match.
+Fetch archived refs from the remote. If `bx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
 
 ```bash
 git bx pull
@@ -314,7 +314,7 @@ git bx pull
 # Synced fetched refs to .gitarchive
 ```
 
-Requires `refs` storage to be enabled.
+Requires `bx.storerefs` to be enabled.
 
 ---
 
@@ -349,7 +349,7 @@ git bx sync --force-refs
 
 If `sync` encounters a SHA conflict and no `--force-*` flag is given, it reports the conflict and exits with a non-zero status. Entries without conflicts are still synced.
 
-Requires `both` storage to be enabled.
+Requires both `bx.storerefs` and `bx.storefile` to be enabled.
 
 ---
 
@@ -359,7 +359,26 @@ Run `git bx help` (or `--help`, `-h`) to print the built-in usage summary at any
 
 ## Storage Backends
 
-### File backend — `.gitarchive`
+### Refs backend — `refs/bx/` (enabled by default)
+
+Git refs stored under `refs/bx/<branch-name>` inside `.git/refs/`. These are standard git refs that git tracks natively.
+
+```bash
+# Inspect directly
+git show-ref | grep refs/bx/
+git log refs/bx/feature/my-feature --oneline
+```
+
+**Strengths:**
+- As long as a ref exists, `git gc` will never prune the commit it points to — archived commits are safe
+- Native git integration — any git command that accepts a ref or SHA works
+- Can be shared via `git bx push` / `git bx pull`
+
+**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git bx push`).
+
+**Why it's on by default:** The primary promise of git-bx is that you can archive a branch and restore it later. If only the file backend is used, a `git gc` run after deletion can silently prune the archived commit — the record in `.gitarchive` becomes a dead pointer. The refs backend prevents this at no cost to the user. Safety first.
+
+### File backend — `.gitarchive` (disabled by default)
 
 A plain text file at the repository root (or wherever `bx.file` points). One entry per line:
 
@@ -375,32 +394,20 @@ fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 - If committed to the repository, it syncs automatically with every `git push`/`git pull`
 - Can be merged between machines with `git bx merge`
 
-**Weakness:** The archive is just a text file. Git does not know it exists, so commits referenced in it can be pruned by `git gc` once they become unreachable.
+**Weakness:** The archive is just a text file. Git does not know it exists, so commits referenced in it can be pruned by `git gc` once they become unreachable (if the refs backend is also disabled).
 
-### Refs backend — `refs/bx/`
+**Why it's off by default:** Most users don't need a visible file in their working tree. The refs backend already provides durable, GC-safe storage locally. Enable the file backend when you want a human-readable audit trail, to commit the archive to the repo for team sharing, or to sync archives between machines without a shared remote.
 
-Git refs stored under `refs/bx/<branch-name>` inside `.git/refs/`. These are standard git refs that git tracks natively.
+### Using both backends together
+
+Enable both for maximum coverage — refs protect commits from GC, while the file provides a portable, human-readable backup that can be committed to the repo and shared via normal `git push`/`git pull`.
 
 ```bash
-# Inspect directly
-git show-ref | grep refs/bx/
-git log refs/bx/feature/my-feature --oneline
+git config bx.storerefs true
+git config bx.storefile true
 ```
 
-**Strengths:**
-- As long as a ref exists, `git gc` will never prune the commit it points to
-- Native git integration — any git command that accepts a ref or SHA works
-- Can be shared via `git bx push` / `git bx pull`
-
-**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git bx push`).
-
-### Both (default)
-
-Uses both backends for every operation. Writes go to both; reads prefer refs and supplement with any file-only entries.
-
-Each backend covers the other's weakness:
-- Refs protect commits from gc; file provides portability and human-readability
-- If you commit `.gitarchive` to the repo, you get automatic remote sync for free — no need to use `git bx push/pull`
+With both enabled, writes go to both backends; reads prefer refs and supplement with any file-only entries. The `git bx sync` command reconciles the two if they drift.
 
 ---
 
@@ -408,21 +415,23 @@ Each backend covers the other's weakness:
 
 All settings are managed via `git config`. They can be set per-repo or globally.
 
-### `bx.storage`
+### `bx.storerefs`
 
-Controls which storage backend(s) are used.
+Controls whether the refs backend (`refs/bx/`) is used. Default: `true`.
 
 ```bash
-git config bx.storage both    # default
-git config bx.storage file
-git config bx.storage refs
+git config bx.storerefs true   # default — GC-safe local storage
+git config bx.storerefs false  # disable if you use file backend only
 ```
 
-| Value | Description |
-|---|---|
-| `both` | Use both backends simultaneously. Recommended default. |
-| `file` | Plain text `.gitarchive` file only. |
-| `refs` | Git refs under `refs/bx/` only. |
+### `bx.storefile`
+
+Controls whether the file backend (`.gitarchive`) is used. Default: `false`.
+
+```bash
+git config bx.storefile true   # enable for human-readable archives or team sharing
+git config bx.storefile false  # default
+```
 
 ### `bx.file`
 
@@ -454,7 +463,7 @@ git bx checkout feature/done-1
 
 ### Syncing across machines (with a shared remote)
 
-Enable refs storage (included in the default `both`), then push your archived refs along with your normal push:
+The refs backend is enabled by default, so just push your archived refs along with your normal push:
 
 ```bash
 git bx update
@@ -483,16 +492,23 @@ git bx merge .gitarchive .gitarchive-a -o .gitarchive
 
 Or commit `.gitarchive` to the repository — it will sync along with the rest of the codebase via normal git push/pull.
 
-### Using only the file backend (lightweight)
+### Using the file backend for team sharing
 
-If you don't need gc protection and just want a simple log:
+Enable the file backend and commit `.gitarchive` to the repo — it will sync automatically with every `git push`/`git pull`, no `git bx push/pull` needed:
 
 ```bash
-git config bx.storage file
-git config bx.file .gitarchive
-
+git config bx.storefile true
 # Optionally commit it so it syncs with the repo
 echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
+```
+
+### Using only the file backend (no GC protection)
+
+If you prefer a visible text file and are not concerned about `git gc`:
+
+```bash
+git config bx.storefile true
+git config bx.storerefs false
 ```
 
 ---

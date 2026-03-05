@@ -82,7 +82,7 @@ main() {
 Commands that don't apply to the configured storage call `_bx_require_storage` at the top of their function, which prints a descriptive error and exits:
 
 ```
-git-bx: this command requires refs storage (current: file)
+git-bx: this command requires refs storage (set: git config bx.storerefs true)
 ```
 
 Unknown commands print an error referencing `git bx help`.
@@ -103,7 +103,7 @@ Reads from configured backend(s) and emits normalized records to stdout, one per
 
 This is a streaming interface — callers pipe or redirect it with `while read`. No temporary files are needed for reads.
 
-For `both` storage, the function performs a union merge:
+When both `bx.storerefs` and `bx.storefile` are enabled, the function performs a union merge:
 1. Emit everything from the refs backend, recording branch names in a `declare -A seen` associative array
 2. Emit file-only entries (those whose branch name is not in `seen`)
 
@@ -111,11 +111,11 @@ Refs are treated as primary in the union merge. This reflects the refs backend's
 
 ### `_bx_write(branch, sha, date)`
 
-Writes to all configured backends. For `both`, writes to file first, then refs. Order doesn't matter for correctness; file first means a crash between the two writes leaves the more portable copy updated.
+Writes to all enabled backends. When both are enabled, writes to file first, then refs. Order doesn't matter for correctness; file first means a crash between the two writes leaves the more portable copy updated.
 
 ### `_bx_delete(branch)`
 
-Removes from all configured backends. For `both`, removes from file first, then refs.
+Removes from all enabled backends. When both are enabled, removes from file first, then refs.
 
 ---
 
@@ -257,7 +257,7 @@ fi
 
 ### `bx sync` — Union Merge Algorithm
 
-`sync` is only meaningful with `both` storage, since it reconciles two backends that can theoretically drift.
+`sync` is only meaningful when both `bx.storerefs` and `bx.storefile` are enabled, since it reconciles two backends that can theoretically drift.
 
 **When drift happens:**
 

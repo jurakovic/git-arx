@@ -20,8 +20,12 @@ _bx_git_root() {
     git rev-parse --show-toplevel
 }
 
-_bx_config_storage() {
-    git config --get bx.storage 2>/dev/null || printf 'both'
+_bx_config_storerefs() {
+    git config --get bx.storerefs 2>/dev/null || printf 'true'
+}
+
+_bx_config_storefile() {
+    git config --get bx.storefile 2>/dev/null || printf 'false'
 }
 
 _bx_config_file() {
@@ -33,22 +37,23 @@ _bx_config_file() {
 
 _bx_require_storage() {
     local required="$1"
-    local current
-    current=$(_bx_config_storage)
+    local use_refs use_file
+    use_refs=$(_bx_config_storerefs)
+    use_file=$(_bx_config_storefile)
     case "$required" in
         refs)
-            [[ "$current" == "refs" || "$current" == "both" ]] && return 0
-            printf 'git-bx: this command requires refs storage (current: %s)\n' "$current" >&2
+            [[ "$use_refs" == "true" ]] && return 0
+            printf 'git-bx: this command requires refs storage (set: git config bx.storerefs true)\n' >&2
             exit 1
             ;;
         file)
-            [[ "$current" == "file" || "$current" == "both" ]] && return 0
-            printf 'git-bx: this command requires file storage (current: %s)\n' "$current" >&2
+            [[ "$use_file" == "true" ]] && return 0
+            printf 'git-bx: this command requires file storage (set: git config bx.storefile true)\n' >&2
             exit 1
             ;;
         both)
-            [[ "$current" == "both" ]] && return 0
-            printf 'git-bx: this command requires both storage backends (current: %s)\n' "$current" >&2
+            [[ "$use_refs" == "true" && "$use_file" == "true" ]] && return 0
+            printf 'git-bx: this command requires both storage backends (bx.storerefs and bx.storefile must both be true)\n' >&2
             exit 1
             ;;
     esac
@@ -136,51 +141,53 @@ _bx_refs_delete() {
 # --- ABSTRACTION LAYER -------------------------------------------------------
 
 _bx_read_all() {
-    local storage
-    storage=$(_bx_config_storage)
-    case "$storage" in
-        file) _bx_file_read ;;
-        refs) _bx_refs_read ;;
-        both)
-            # Union merge: refs are primary; supplement with file-only entries
-            declare -A seen
-            while IFS=' ' read -r branch sha date rest; do
-                seen["$branch"]=1
+    local use_refs use_file
+    use_refs=$(_bx_config_storerefs)
+    use_file=$(_bx_config_storefile)
+    if [[ "$use_refs" == "true" && "$use_file" == "true" ]]; then
+        # Union merge: refs are primary; supplement with file-only entries
+        declare -A seen
+        while IFS=' ' read -r branch sha date rest; do
+            seen["$branch"]=1
+            printf '%s %s %s\n' "$branch" "$sha" "$date"
+        done < <(_bx_refs_read)
+        while IFS=' ' read -r branch sha date rest; do
+            if [[ -z "${seen[$branch]+x}" ]]; then
                 printf '%s %s %s\n' "$branch" "$sha" "$date"
-            done < <(_bx_refs_read)
-            while IFS=' ' read -r branch sha date rest; do
-                if [[ -z "${seen[$branch]+x}" ]]; then
-                    printf '%s %s %s\n' "$branch" "$sha" "$date"
-                fi
-            done < <(_bx_file_read)
-            ;;
-        *)
-            printf 'git-bx: unknown storage type "%s"\n' "$storage" >&2
-            exit 1
-            ;;
-    esac
+            fi
+        done < <(_bx_file_read)
+    elif [[ "$use_refs" == "true" ]]; then
+        _bx_refs_read
+    elif [[ "$use_file" == "true" ]]; then
+        _bx_file_read
+    else
+        printf 'git-bx: no storage backend enabled (set bx.storerefs=true or bx.storefile=true)\n' >&2
+        exit 1
+    fi
 }
 
 _bx_write() {
     local branch="$1" sha="$2" date="$3"
-    local storage
-    storage=$(_bx_config_storage)
-    if [[ "$storage" == "file" || "$storage" == "both" ]]; then
+    local use_refs use_file
+    use_refs=$(_bx_config_storerefs)
+    use_file=$(_bx_config_storefile)
+    if [[ "$use_file" == "true" ]]; then
         _bx_file_write "$branch" "$sha" "$date"
     fi
-    if [[ "$storage" == "refs" || "$storage" == "both" ]]; then
+    if [[ "$use_refs" == "true" ]]; then
         _bx_refs_write "$branch" "$sha"
     fi
 }
 
 _bx_delete() {
     local branch="$1"
-    local storage
-    storage=$(_bx_config_storage)
-    if [[ "$storage" == "file" || "$storage" == "both" ]]; then
+    local use_refs use_file
+    use_refs=$(_bx_config_storerefs)
+    use_file=$(_bx_config_storefile)
+    if [[ "$use_file" == "true" ]]; then
         _bx_file_delete "$branch"
     fi
-    if [[ "$storage" == "refs" || "$storage" == "both" ]]; then
+    if [[ "$use_refs" == "true" ]]; then
         _bx_refs_delete "$branch"
     fi
 }
@@ -645,9 +652,9 @@ cmd_pull() {
     git fetch origin 'refs/bx/*:refs/bx/*'
 
     # If file backend is also enabled, sync fetched refs into .gitarchive
-    local storage
-    storage=$(_bx_config_storage)
-    if [[ "$storage" == "both" ]]; then
+    local use_file
+    use_file=$(_bx_config_storefile)
+    if [[ "$use_file" == "true" ]]; then
         local branch sha date
         while IFS=' ' read -r branch sha date rest; do
             _bx_file_write "$branch" "$sha" "$date"
@@ -687,13 +694,17 @@ COMMANDS
   help                          Show this help
 
 STORAGE BACKENDS
-  Configured via: git config bx.storage file|refs|both (default: both)
+  Configured via two independent flags:
+    git config bx.storerefs true|false   (default: true)
+    git config bx.storefile true|false   (default: false)
 
-  file   Plain text .gitarchive file. Portable and committable, but
-         commits may be lost after git gc.
   refs   Git refs under refs/bx/<branch>. Protects commits from gc.
+         Enabled by default — archived commits remain reachable,
+         preventing data loss if git gc runs after branch deletion.
          Never pushed to remote unless you run: git bx push
-  both   Uses both (default). Each backend covers the other's weakness.
+  file   Plain text .gitarchive file. Portable and committable.
+         Enable for human-readable archives or team sharing via the repo.
+         Commits may be lost after git gc if refs is also disabled.
 
 OTHER CONFIG
   bx.file   Path to archive file (default: .gitarchive)
