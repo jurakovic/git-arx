@@ -1,27 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# install.sh — Install git-bx and configure the git alias
+# install.sh — Install git-arx and configure the git alias
 #
 # Local install (after git clone):
 #   bash install.sh
 #
 # Remote install (no clone needed):
-#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash
 #
 # Custom install path:
 #   bash install.sh /usr/local/bin
-#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash -s -- /usr/local/bin
+#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash -s -- /usr/local/bin
 
-RAW_URL="https://raw.githubusercontent.com/jurakovic/git-bx/master/git-bx"
+RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/master/git-arx"
 
-# Locate git-bx: check alongside this script first, then download
+# Locate git-arx: check alongside this script first, then download
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || pwd)"
-SCRIPT_SRC="$SCRIPT_DIR/git-bx"
+SCRIPT_SRC="$SCRIPT_DIR/git-arx"
 TMPFILE=""
 
 if [[ ! -f "$SCRIPT_SRC" ]]; then
-    printf 'Downloading git-bx...\n'
+    printf 'Downloading git-arx...\n'
     TMPFILE="$(mktemp)"
     curl -fsSL "$RAW_URL" -o "$TMPFILE"
     SCRIPT_SRC="$TMPFILE"
@@ -46,9 +46,9 @@ if [[ ! -d "$INSTALL_DIR" ]]; then
 fi
 
 # Install
-cp "$SCRIPT_SRC" "$INSTALL_DIR/git-bx"
-chmod +x "$INSTALL_DIR/git-bx"
-printf 'Installed: %s/git-bx\n' "$INSTALL_DIR"
+cp "$SCRIPT_SRC" "$INSTALL_DIR/git-arx"
+chmod +x "$INSTALL_DIR/git-arx"
+printf 'Installed: %s/git-arx\n' "$INSTALL_DIR"
 
 # Cleanup temp file if we downloaded
 if [[ -n "$TMPFILE" ]]; then
@@ -63,6 +63,6 @@ if ! printf '%s' "$PATH" | tr ':' '\n' | grep -qxF "$INSTALL_DIR"; then
 fi
 
 # Set global git alias
-git config --global alias.bx '!git-bx'
-printf 'Git alias set: git bx -> git-bx\n'
-printf '\nDone! Try: git bx help\n'
+git config --global alias.arx '!git-arx'
+printf 'Git alias set: git arx -> git-arx\n'
+printf '\nDone! Try: git arx help\n'

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test.sh — Integration test suite for git-bx
-# Runs ./git-bx directly; no install required.
+# test.sh — Integration test suite for git-arx
+# Runs ./git-arx directly; no install required.
 # Usage: bash test.sh
 
-BX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git-bx"
+ARX="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/git-arx"
 PASS=0
 FAIL=0
 TMPROOT=""
@@ -48,16 +48,16 @@ section() { printf '\n=== %s ===\n' "$1"; }
 
 set_storage() {
     case "$1" in
-        file) git config bx.storefile true  && git config bx.storerefs false ;;
-        refs) git config bx.storerefs true  && git config bx.storefile false ;;
-        both) git config bx.storerefs true  && git config bx.storefile true  ;;
+        file) git config arx.storefile true  && git config arx.storerefs false ;;
+        refs) git config arx.storerefs true  && git config arx.storefile false ;;
+        both) git config arx.storerefs true  && git config arx.storefile true  ;;
     esac
 }
 
 reset_archive() {
     cd "$REPO"
     rm -f .gitarchive
-    git for-each-ref --format='%(refname)' 'refs/bx/' | while read -r ref; do
+    git for-each-ref --format='%(refname)' 'refs/arx/' | while read -r ref; do
         git update-ref -d "$ref"
     done
     set_storage file
@@ -114,39 +114,39 @@ teardown() {
 
 test_help() {
     section "help"
-    assert_ok  "help exits 0"        "$BX" help
-    assert_out "help shows USAGE"    "USAGE"    "$BX" help
-    assert_out "help shows COMMANDS" "COMMANDS" "$BX" help
-    assert_ok  "--help exits 0"      "$BX" --help
-    assert_ok  "-h exits 0"          "$BX" -h
+    assert_ok  "help exits 0"        "$ARX" help
+    assert_out "help shows USAGE"    "USAGE"    "$ARX" help
+    assert_out "help shows COMMANDS" "COMMANDS" "$ARX" help
+    assert_ok  "--help exits 0"      "$ARX" --help
+    assert_ok  "-h exits 0"          "$ARX" -h
 }
 
 test_add() {
     section "add"
     reset_archive
 
-    assert_out   "add: archives a branch"       "Archived: feature/alpha"   "$BX" add feature/alpha
-    assert_out   "add: shows short SHA"         "at "                       "$BX" add feature/beta
-    assert_out   "add: nonexistent: error msg"  "not found in local"        "$BX" add no-such-branch
-    assert_fails "add: nonexistent: nonzero"                                "$BX" add no-such-branch
-    assert_out   "add: no arg: usage"           "Usage:"                    "$BX" add
-    assert_fails "add: no arg: nonzero"                                     "$BX" add
+    assert_out   "add: archives a branch"       "Archived: feature/alpha"   "$ARX" add feature/alpha
+    assert_out   "add: shows short SHA"         "at "                       "$ARX" add feature/beta
+    assert_out   "add: nonexistent: error msg"  "not found in local"        "$ARX" add no-such-branch
+    assert_fails "add: nonexistent: nonzero"                                "$ARX" add no-such-branch
+    assert_out   "add: no arg: usage"           "Usage:"                    "$ARX" add
+    assert_fails "add: no arg: nonzero"                                     "$ARX" add
 
     # same SHA: idempotent
-    assert_out   "add: same SHA: already archived"  "Already archived"  "$BX" add feature/alpha
-    assert_ok    "add: same SHA: exits 0"                               "$BX" add feature/alpha
+    assert_out   "add: same SHA: already archived"  "Already archived"  "$ARX" add feature/alpha
+    assert_ok    "add: same SHA: exits 0"                               "$ARX" add feature/alpha
 
     # conflict: different SHA already in archive
     reset_archive
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
 
-    assert_out   "add: conflict: error message"      "conflict"            "$BX" add feature/alpha
-    assert_out   "add: conflict: shows old SHA"      "${SHA_BETA:0:8}"     "$BX" add feature/alpha
-    assert_out   "add: conflict: hints --force"      "force"               "$BX" add feature/alpha
-    assert_fails "add: conflict: nonzero"                                  "$BX" add feature/alpha
+    assert_out   "add: conflict: error message"      "conflict"            "$ARX" add feature/alpha
+    assert_out   "add: conflict: shows old SHA"      "${SHA_BETA:0:8}"     "$ARX" add feature/alpha
+    assert_out   "add: conflict: hints --force"      "force"               "$ARX" add feature/alpha
+    assert_fails "add: conflict: nonzero"                                  "$ARX" add feature/alpha
 
     # --force: overwrites conflict
-    assert_out   "add: --force: archived"            "Archived"            "$BX" add feature/alpha --force
+    assert_out   "add: --force: archived"            "Archived"            "$ARX" add feature/alpha --force
     local stored
     stored=$(grep "^feature/alpha " .gitarchive | awk '{print $2}')
     if [[ "$stored" == "$SHA_ALPHA" ]]; then
@@ -158,18 +158,18 @@ test_add() {
     # archive name: archive under a different name
     reset_archive
     assert_out   "add: archive name: archived with archive name label"  "Archived: feature/alpha (as alpha-saved)"  \
-        "$BX" add feature/alpha alpha-saved
-    assert_out   "add: archive name: name in archive"            "alpha-saved"      "$BX" list
+        "$ARX" add feature/alpha alpha-saved
+    assert_out   "add: archive name: name in archive"            "alpha-saved"      "$ARX" list
 
     # archive name conflict
-    assert_out   "add: archive name conflict: error"             "conflict"         "$BX" add feature/beta alpha-saved
-    assert_fails "add: archive name conflict: nonzero"                              "$BX" add feature/beta alpha-saved
+    assert_out   "add: archive name conflict: error"             "conflict"         "$ARX" add feature/beta alpha-saved
+    assert_fails "add: archive name conflict: nonzero"                              "$ARX" add feature/beta alpha-saved
 
     # SHA already archived under a different name: note shown, still archives
     reset_archive
-    "$BX" add feature/alpha alpha-saved > /dev/null
+    "$ARX" add feature/alpha alpha-saved > /dev/null
     local dup_out
-    dup_out=$("$BX" add feature/alpha 2>&1)
+    dup_out=$("$ARX" add feature/alpha 2>&1)
     if printf '%s' "$dup_out" | grep -qF "Note:"; then
         pass "add: SHA duplicate: shows note"
     else
@@ -193,58 +193,58 @@ test_add() {
 test_remove() {
     section "remove"
     reset_archive
-    "$BX" add feature/alpha > /dev/null
+    "$ARX" add feature/alpha > /dev/null
 
-    assert_out   "remove: removes branch"       "Removed: feature/alpha" "$BX" remove feature/alpha
-    assert_out   "remove: missing: error msg"   "not found in archive"   "$BX" remove feature/alpha
-    assert_fails "remove: missing: nonzero"                              "$BX" remove feature/alpha
-    assert_out   "remove: no arg: usage"        "Usage:"                 "$BX" remove
-    assert_fails "remove: no arg: nonzero"                               "$BX" remove
+    assert_out   "remove: removes branch"       "Removed: feature/alpha" "$ARX" remove feature/alpha
+    assert_out   "remove: missing: error msg"   "not found in archive"   "$ARX" remove feature/alpha
+    assert_fails "remove: missing: nonzero"                              "$ARX" remove feature/alpha
+    assert_out   "remove: no arg: usage"        "Usage:"                 "$ARX" remove
+    assert_fails "remove: no arg: nonzero"                               "$ARX" remove
 }
 
 test_list() {
     section "list"
     reset_archive
 
-    assert_out "list: empty archive message" "No archived branches" "$BX" list
+    assert_out "list: empty archive message" "No archived branches" "$ARX" list
 
-    "$BX" add feature/alpha > /dev/null
-    "$BX" add feature/beta  > /dev/null
-    "$BX" add fix/gamma     > /dev/null
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" add feature/beta  > /dev/null
+    "$ARX" add fix/gamma     > /dev/null
 
-    assert_out   "list: shows header"              "BRANCH"           "$BX" list
-    assert_out   "list: shows archived branch"     "feature/alpha"    "$BX" list
-    assert_out   "list: shows all branches"        "fix/gamma"        "$BX" list
-    assert_out   "list: --author shows header"     "AUTHOR"           "$BX" list --author
-    assert_out   "list: --author shows name"       "Test"             "$BX" list --author
-    assert_ok    "list: --sort=name"               "$BX" list --sort=name
-    assert_ok    "list: --sort=date"               "$BX" list --sort=date
-    assert_ok    "list: --order=asc"               "$BX" list --order=asc
-    assert_ok    "list: --order=desc"              "$BX" list --order=desc
-    assert_ok    "list: --storage=file"            "$BX" list --storage=file
-    assert_fails "list: --storage=refs (file-only)" "$BX" list --storage=refs
-    assert_out   "list: --storage=bogus: error"   "invalid --storage value" "$BX" list --storage=bogus
-    assert_fails "list: unknown option: nonzero"  "$BX" list --bogus
+    assert_out   "list: shows header"              "BRANCH"           "$ARX" list
+    assert_out   "list: shows archived branch"     "feature/alpha"    "$ARX" list
+    assert_out   "list: shows all branches"        "fix/gamma"        "$ARX" list
+    assert_out   "list: --author shows header"     "AUTHOR"           "$ARX" list --author
+    assert_out   "list: --author shows name"       "Test"             "$ARX" list --author
+    assert_ok    "list: --sort=name"               "$ARX" list --sort=name
+    assert_ok    "list: --sort=date"               "$ARX" list --sort=date
+    assert_ok    "list: --order=asc"               "$ARX" list --order=asc
+    assert_ok    "list: --order=desc"              "$ARX" list --order=desc
+    assert_ok    "list: --storage=file"            "$ARX" list --storage=file
+    assert_fails "list: --storage=refs (file-only)" "$ARX" list --storage=refs
+    assert_out   "list: --storage=bogus: error"   "invalid --storage value" "$ARX" list --storage=bogus
+    assert_fails "list: unknown option: nonzero"  "$ARX" list --bogus
 }
 
 test_rename() {
     section "rename"
     reset_archive
-    "$BX" add feature/alpha > /dev/null
-    "$BX" add feature/beta  > /dev/null
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" add feature/beta  > /dev/null
 
-    assert_out   "rename: succeeds"              "Renamed: feature/alpha -> alpha-old"  "$BX" rename feature/alpha alpha-old
-    assert_out   "rename: no arg: usage"         "Usage:"                               "$BX" rename
-    assert_fails "rename: no arg: nonzero"                                              "$BX" rename
-    assert_out   "rename: missing: error"        "not found in archive"                 "$BX" rename no-such x
-    assert_fails "rename: missing: nonzero"                                             "$BX" rename no-such x
-    assert_out   "rename: same name: error"      "identical"                            "$BX" rename feature/beta feature/beta
-    assert_fails "rename: same name: nonzero"                                           "$BX" rename feature/beta feature/beta
-    assert_out   "rename: target exists: error"  "already exists"                       "$BX" rename feature/beta alpha-old
-    assert_fails "rename: target exists: nonzero"                                       "$BX" rename feature/beta alpha-old
+    assert_out   "rename: succeeds"              "Renamed: feature/alpha -> alpha-old"  "$ARX" rename feature/alpha alpha-old
+    assert_out   "rename: no arg: usage"         "Usage:"                               "$ARX" rename
+    assert_fails "rename: no arg: nonzero"                                              "$ARX" rename
+    assert_out   "rename: missing: error"        "not found in archive"                 "$ARX" rename no-such x
+    assert_fails "rename: missing: nonzero"                                             "$ARX" rename no-such x
+    assert_out   "rename: same name: error"      "identical"                            "$ARX" rename feature/beta feature/beta
+    assert_fails "rename: same name: nonzero"                                           "$ARX" rename feature/beta feature/beta
+    assert_out   "rename: target exists: error"  "already exists"                       "$ARX" rename feature/beta alpha-old
+    assert_fails "rename: target exists: nonzero"                                       "$ARX" rename feature/beta alpha-old
 
     local list_out
-    list_out=$("$BX" list 2>&1)
+    list_out=$("$ARX" list 2>&1)
     if printf '%s' "$list_out" | grep -qF "alpha-old"; then
         pass "rename: new name appears in list"
     else
@@ -260,14 +260,14 @@ test_rename() {
     set_storage refs
     reset_archive
     set_storage refs
-    "$BX" add feature/alpha > /dev/null
-    "$BX" rename feature/alpha alpha-renamed > /dev/null
-    if git rev-parse --verify refs/bx/alpha-renamed > /dev/null 2>&1; then
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" rename feature/alpha alpha-renamed > /dev/null
+    if git rev-parse --verify refs/arx/alpha-renamed > /dev/null 2>&1; then
         pass "rename refs: new ref exists"
     else
         fail "rename refs: new ref should exist"
     fi
-    if ! git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+    if ! git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "rename refs: old ref gone"
     else
         fail "rename refs: old ref should be gone"
@@ -282,7 +282,7 @@ test_update() {
 
     # status: shows candidates without writing
     local dry_out
-    dry_out=$("$BX" status 2>&1)
+    dry_out=$("$ARX" status 2>&1)
     if printf '%s' "$dry_out" | grep -qF "feature/alpha"; then
         pass "status: shows branch with no upstream"
     else
@@ -310,10 +310,10 @@ test_update() {
     else
         fail "status: does not write archive"
     fi
-    assert_out "status: shows author" "Test" "$BX" status
+    assert_out "status: shows author" "Test" "$ARX" status
 
     local out
-    out=$("$BX" update 2>&1)
+    out=$("$ARX" update 2>&1)
     if printf '%s' "$out" | grep -qF "Archived: feature/alpha"; then
         pass "update: archives branch with no upstream"
     else
@@ -321,14 +321,14 @@ test_update() {
     fi
     # After archiving, status should show "Archived" for those branches
     local status_after
-    status_after=$("$BX" status 2>&1)
+    status_after=$("$ARX" status 2>&1)
     if printf '%s' "$status_after" | grep -qF "Archived"; then
         pass "status: shows Archived for already-archived branch"
     else
         fail "status: shows Archived for already-archived branch"
         printf '      got: %s\n' "$status_after"
     fi
-    assert_out "status: shows author (2nd call)" "Test" "$BX" status
+    assert_out "status: shows author (2nd call)" "Test" "$ARX" status
     if printf '%s' "$out" | grep -qF "Archived 3 branch(es)"; then
         pass "update: reports correct count"
     else
@@ -343,7 +343,7 @@ test_update() {
     git checkout "$DEFAULT_BRANCH" -q
 
     reset_archive
-    out=$("$BX" update 2>&1)
+    out=$("$ARX" update 2>&1)
     if ! printf '%s' "$out" | grep -qF "Archived: feature/alpha"; then
         pass "update: skips branch with live upstream"
     else
@@ -356,7 +356,7 @@ test_update() {
 
     # --dry-run: shows same output without writing
     reset_archive
-    out=$("$BX" update --dry-run 2>&1)
+    out=$("$ARX" update --dry-run 2>&1)
     if printf '%s' "$out" | grep -qF "Archived: feature/alpha"; then
         pass "update --dry-run: shows archived message"
     else
@@ -375,14 +375,14 @@ test_update() {
         fail "update --dry-run: should not write archive"
     fi
 
-    assert_fails "update: unknown option: nonzero" "$BX" update --bogus
+    assert_fails "update: unknown option: nonzero" "$ARX" update --bogus
 
     # conflict: already archived with a different SHA
     reset_archive
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
 
     local conflict_out
-    conflict_out=$("$BX" update 2>&1) || true
+    conflict_out=$("$ARX" update 2>&1) || true
     if printf '%s' "$conflict_out" | grep -qF "Conflict: feature/alpha"; then
         pass "update: reports conflict for different SHA"
     else
@@ -403,9 +403,9 @@ test_update() {
     fi
 
     # --force: overwrites conflicts
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_BETA" > .gitarchive
     local force_out
-    force_out=$("$BX" update --force 2>&1)
+    force_out=$("$ARX" update --force 2>&1)
     if printf '%s' "$force_out" | grep -qF "Updated: feature/alpha"; then
         pass "update --force: overwrites conflict"
     else
@@ -420,9 +420,9 @@ test_update() {
 
     # already up to date: silently skipped
     reset_archive
-    "$BX" add feature/alpha > /dev/null
+    "$ARX" add feature/alpha > /dev/null
     local skip_out
-    skip_out=$("$BX" update 2>&1)
+    skip_out=$("$ARX" update 2>&1)
     if ! printf '%s' "$skip_out" | grep -qF "feature/alpha"; then
         pass "update: silently skips already up-to-date branch"
     else
@@ -432,9 +432,9 @@ test_update() {
 
     # SHA already archived under a different name: skipped with note
     reset_archive
-    "$BX" add feature/alpha alpha-saved > /dev/null
+    "$ARX" add feature/alpha alpha-saved > /dev/null
     local safe_out
-    safe_out=$("$BX" update 2>&1)
+    safe_out=$("$ARX" update 2>&1)
     if printf '%s' "$safe_out" | grep -qF "Already safe: feature/alpha"; then
         pass "update: SHA duplicate: reports already safe"
     else
@@ -461,7 +461,7 @@ test_update() {
 
     # status: shows "Archived as" for SHA archived under different name
     local status_as_out
-    status_as_out=$("$BX" status 2>&1)
+    status_as_out=$("$ARX" status 2>&1)
     if printf '%s' "$status_as_out" | grep -qF 'Archived as'; then
         pass "status: shows Archived as for SHA archived under different name"
     else
@@ -477,11 +477,11 @@ test_update() {
 
     # combined: stale entry for branch (different SHA) AND current SHA archived elsewhere
     # feature/alpha is at SHA_ALPHA; archive has feature/alpha->SHA_BETA (old) and alpha-saved->SHA_ALPHA
-    printf '# git-bx archive\nalpha-saved %s 2025-01-01T00:00:00+00:00\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' \
+    printf '# git-arx archive\nalpha-saved %s 2025-01-01T00:00:00+00:00\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' \
         "$SHA_ALPHA" "$SHA_BETA" > .gitarchive
 
     local combined_update_out
-    combined_update_out=$("$BX" update 2>&1)
+    combined_update_out=$("$ARX" update 2>&1)
     if printf '%s' "$combined_update_out" | grep -qF "Already safe: feature/alpha"; then
         pass "update: conflict+SHA duplicate: reports already safe"
     else
@@ -496,7 +496,7 @@ test_update() {
     fi
 
     local combined_status_out
-    combined_status_out=$("$BX" status 2>&1)
+    combined_status_out=$("$ARX" status 2>&1)
     if printf '%s' "$combined_status_out" | grep -qF 'Archived as'; then
         pass "status: conflict+SHA duplicate: shows Archived as"
     else
@@ -514,29 +514,29 @@ test_update() {
 test_log() {
     section "log"
     reset_archive
-    "$BX" add feature/alpha > /dev/null
+    "$ARX" add feature/alpha > /dev/null
 
-    assert_ok    "log: shows history"      "$BX" log feature/alpha
-    assert_ok    "log: passes --oneline"   "$BX" log feature/alpha --oneline
-    assert_ok    "log: passes -n 1"        "$BX" log feature/alpha -n 1
-    assert_out   "log: missing: error"     "not found in archive" "$BX" log no-such-branch
-    assert_fails "log: missing: nonzero"                          "$BX" log no-such-branch
-    assert_out   "log: no arg: usage"      "Usage:"               "$BX" log
-    assert_fails "log: no arg: nonzero"                           "$BX" log
+    assert_ok    "log: shows history"      "$ARX" log feature/alpha
+    assert_ok    "log: passes --oneline"   "$ARX" log feature/alpha --oneline
+    assert_ok    "log: passes -n 1"        "$ARX" log feature/alpha -n 1
+    assert_out   "log: missing: error"     "not found in archive" "$ARX" log no-such-branch
+    assert_fails "log: missing: nonzero"                          "$ARX" log no-such-branch
+    assert_out   "log: no arg: usage"      "Usage:"               "$ARX" log
+    assert_fails "log: no arg: nonzero"                           "$ARX" log
 }
 
 test_checkout() {
     section "checkout"
     reset_archive
-    "$BX" add feature/alpha > /dev/null
+    "$ARX" add feature/alpha > /dev/null
     git branch -D feature/alpha  # delete locally so we can restore it
 
-    assert_out   "checkout: restores branch"       "Restored branch: feature/alpha" "$BX" checkout feature/alpha
-    assert_out   "checkout: branch exists: error"  "already exists"                 "$BX" checkout feature/alpha
-    assert_fails "checkout: branch exists: nonzero"                                 "$BX" checkout feature/alpha
-    assert_out   "checkout: missing: error"        "not found in archive"           "$BX" checkout no-such-branch
-    assert_fails "checkout: missing: nonzero"                                       "$BX" checkout no-such-branch
-    assert_out   "checkout: no arg: usage"         "Usage:"                         "$BX" checkout
+    assert_out   "checkout: restores branch"       "Restored branch: feature/alpha" "$ARX" checkout feature/alpha
+    assert_out   "checkout: branch exists: error"  "already exists"                 "$ARX" checkout feature/alpha
+    assert_fails "checkout: branch exists: nonzero"                                 "$ARX" checkout feature/alpha
+    assert_out   "checkout: missing: error"        "not found in archive"           "$ARX" checkout no-such-branch
+    assert_fails "checkout: missing: nonzero"                                       "$ARX" checkout no-such-branch
+    assert_out   "checkout: no arg: usage"         "Usage:"                         "$ARX" checkout
     git checkout "$DEFAULT_BRANCH" -q
 }
 
@@ -545,11 +545,11 @@ test_prune() {
     reset_archive
     recreate_branches
 
-    "$BX" add feature/alpha > /dev/null
-    "$BX" add feature/beta  > /dev/null
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" add feature/beta  > /dev/null
 
     local out
-    out=$("$BX" prune --force 2>&1)
+    out=$("$ARX" prune --force 2>&1)
     if printf '%s' "$out" | grep -qF "Deleted 2 branch(es)"; then
         pass "prune: deletes archived branches with --force"
     else
@@ -562,13 +562,13 @@ test_prune() {
         fail "prune: feature/alpha should be deleted"
     fi
 
-    assert_out "prune: nothing to delete" "No archived branches found" "$BX" prune --force
+    assert_out "prune: nothing to delete" "No archived branches found" "$ARX" prune --force
 
     # Currently checked-out branch should be skipped
     recreate_branches
-    "$BX" add fix/gamma > /dev/null
+    "$ARX" add fix/gamma > /dev/null
     git checkout fix/gamma -q
-    out=$("$BX" prune --force 2>&1)
+    out=$("$ARX" prune --force 2>&1)
     if printf '%s' "$out" | grep -qF "Skipped (currently checked out)"; then
         pass "prune: skips checked-out branch"
     else
@@ -579,9 +579,9 @@ test_prune() {
 
     # --dry-run: shows branch list without deleting
     recreate_branches
-    "$BX" add feature/alpha > /dev/null
-    "$BX" add feature/beta  > /dev/null
-    out=$("$BX" prune --dry-run 2>&1)
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" add feature/beta  > /dev/null
+    out=$("$ARX" prune --dry-run 2>&1)
     if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
         pass "prune --dry-run: appends dry-run line"
     else
@@ -600,7 +600,7 @@ test_prune() {
         fail "prune --dry-run: branch should not be deleted"
     fi
 
-    assert_fails "prune: unknown option: nonzero" "$BX" prune --bogus
+    assert_fails "prune: unknown option: nonzero" "$ARX" prune --bogus
 
     recreate_branches  # restore for subsequent tests
 }
@@ -616,10 +616,10 @@ test_merge() {
     printf '# archive\nfeature/beta %s 2025-01-02T00:00:00+00:00\nfix/gamma %s 2025-01-03T00:00:00+00:00\n' \
         "$SHA_BETA" "$SHA_GAMMA" > "$f2"
 
-    assert_ok  "merge: succeeds"         "$BX" merge "$f1" "$f2" -o "$fo"
+    assert_ok  "merge: succeeds"         "$ARX" merge "$f1" "$f2" -o "$fo"
     assert_out "merge: alpha in output"  "feature/alpha" cat "$fo"
     assert_out "merge: gamma in output"  "fix/gamma"     cat "$fo"
-    assert_out "merge: reports count"    "Merged"        "$BX" merge "$f1" "$f2" -o "$fo"
+    assert_out "merge: reports count"    "Merged"        "$ARX" merge "$f1" "$f2" -o "$fo"
 
     local beta_count
     beta_count=$(grep -c "^feature/beta " "$fo" 2>/dev/null || true)
@@ -632,7 +632,7 @@ test_merge() {
     # SHA conflict: f2 has feature/alpha with a different SHA
     printf '# archive\nfeature/alpha %s 2025-01-04T00:00:00+00:00\n' "$SHA_BETA" > "$f2"
     local out
-    out=$("$BX" merge "$f1" "$f2" -o "$fo" 2>&1) || true
+    out=$("$ARX" merge "$f1" "$f2" -o "$fo" 2>&1) || true
     if printf '%s' "$out" | grep -qF "CONFLICT"; then
         pass "merge: reports SHA conflict"
     else
@@ -646,8 +646,8 @@ test_merge() {
 
     # Wrong backend
     set_storage refs
-    assert_out   "merge: requires file storage" "requires file storage" "$BX" merge "$f1" "$f2" -o "$fo"
-    assert_fails "merge: nonzero when refs-only"                        "$BX" merge "$f1" "$f2" -o "$fo"
+    assert_out   "merge: requires file storage" "requires file storage" "$ARX" merge "$f1" "$f2" -o "$fo"
+    assert_fails "merge: nonzero when refs-only"                        "$ARX" merge "$f1" "$f2" -o "$fo"
     set_storage file
 }
 
@@ -656,18 +656,18 @@ test_refs_backend() {
     reset_archive
     set_storage refs
 
-    assert_out "refs add: archives" "Archived: feature/alpha" "$BX" add feature/alpha
+    assert_out "refs add: archives" "Archived: feature/alpha" "$ARX" add feature/alpha
 
-    if git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
-        pass "refs: ref exists under refs/bx/"
+    if git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
+        pass "refs: ref exists under refs/arx/"
     else
-        fail "refs: ref should exist under refs/bx/"
+        fail "refs: ref should exist under refs/arx/"
     fi
 
-    assert_out "refs list: shows branch"  "feature/alpha"          "$BX" list
-    assert_out "refs remove: removes"     "Removed: feature/alpha" "$BX" remove feature/alpha
+    assert_out "refs list: shows branch"  "feature/alpha"          "$ARX" list
+    assert_out "refs remove: removes"     "Removed: feature/alpha" "$ARX" remove feature/alpha
 
-    if ! git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+    if ! git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "refs: ref removed"
     else
         fail "refs: ref should be removed"
@@ -681,27 +681,27 @@ test_both_backend() {
     reset_archive
     set_storage both
 
-    "$BX" add feature/alpha > /dev/null
+    "$ARX" add feature/alpha > /dev/null
 
     if grep -qF "feature/alpha" .gitarchive 2>/dev/null; then
         pass "both: written to file"
     else
         fail "both: should write to file"
     fi
-    if git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+    if git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "both: written to refs"
     else
         fail "both: should write to refs"
     fi
 
-    "$BX" remove feature/alpha > /dev/null
+    "$ARX" remove feature/alpha > /dev/null
 
     if ! grep -qF "feature/alpha" .gitarchive 2>/dev/null; then
         pass "both: deleted from file"
     else
         fail "both: should delete from file"
     fi
-    if ! git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+    if ! git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "both: deleted from refs"
     else
         fail "both: should delete from refs"
@@ -715,14 +715,14 @@ test_push_pull() {
     reset_archive
     set_storage refs
 
-    "$BX" add feature/alpha > /dev/null
-    "$BX" add feature/beta  > /dev/null
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" add feature/beta  > /dev/null
 
-    assert_ok    "push: succeeds"            "$BX" push
-    assert_ok    "push: --dry-run"           "$BX" push --dry-run
-    assert_fails "push: unknown option"      "$BX" push --bogus
+    assert_ok    "push: succeeds"            "$ARX" push
+    assert_ok    "push: --dry-run"           "$ARX" push --dry-run
+    assert_fails "push: unknown option"      "$ARX" push --bogus
 
-    if git ls-remote "$REMOTE" 'refs/bx/*' | grep -q 'refs/bx/feature/alpha'; then
+    if git ls-remote "$REMOTE" 'refs/arx/*' | grep -q 'refs/arx/feature/alpha'; then
         pass "push: ref visible on remote"
     else
         fail "push: ref should be on remote"
@@ -736,9 +736,9 @@ test_push_pull() {
     git config user.name "Test"
     set_storage refs
 
-    assert_ok "pull: succeeds in fresh clone" "$BX" pull
+    assert_ok "pull: succeeds in fresh clone" "$ARX" pull
 
-    if git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+    if git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "pull: ref present after pull"
     else
         fail "pull: ref should be present after pull"
@@ -746,7 +746,7 @@ test_push_pull() {
 
     # pull with both storage → also syncs to .gitarchive
     set_storage both
-    "$BX" pull > /dev/null 2>&1 || true
+    "$ARX" pull > /dev/null 2>&1 || true
     if [[ -f .gitarchive ]] && grep -qF "feature/alpha" .gitarchive; then
         pass "pull (both): syncs to .gitarchive"
     else
@@ -763,10 +763,10 @@ test_sync() {
     set_storage both
 
     # File-only drift
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
 
     local out
-    out=$("$BX" sync --dry-run 2>&1)
+    out=$("$ARX" sync --dry-run 2>&1)
     if printf '%s' "$out" | grep -qF "Synced to refs: feature/alpha"; then
         pass "sync --dry-run: reports file-only entry"
     else
@@ -779,14 +779,14 @@ test_sync() {
         fail "sync --dry-run: should append dry-run line"
         printf '      got: %s\n' "$out"
     fi
-    if ! git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+    if ! git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "sync --dry-run: does not write to refs"
     else
         fail "sync --dry-run: should not write to refs"
     fi
 
-    "$BX" sync > /dev/null
-    if git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
+    "$ARX" sync > /dev/null
+    if git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "sync: copies file-only entry to refs"
     else
         fail "sync: should copy file-only to refs"
@@ -795,9 +795,9 @@ test_sync() {
     # Refs-only drift
     reset_archive
     set_storage both
-    git update-ref "refs/bx/feature/beta" "$SHA_BETA"
+    git update-ref "refs/arx/feature/beta" "$SHA_BETA"
 
-    out=$("$BX" sync --dry-run 2>&1)
+    out=$("$ARX" sync --dry-run 2>&1)
     if printf '%s' "$out" | grep -qF "Synced to file: feature/beta"; then
         pass "sync --dry-run: reports refs-only entry"
     else
@@ -805,7 +805,7 @@ test_sync() {
         printf '      got: %s\n' "$out"
     fi
 
-    "$BX" sync > /dev/null
+    "$ARX" sync > /dev/null
     if [[ -f .gitarchive ]] && grep -qF "feature/beta" .gitarchive; then
         pass "sync: copies refs-only entry to file"
     else
@@ -815,10 +815,10 @@ test_sync() {
     # SHA conflict
     reset_archive
     set_storage both
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
-    git update-ref "refs/bx/feature/alpha" "$SHA_BETA"  # intentionally different
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    git update-ref "refs/arx/feature/alpha" "$SHA_BETA"  # intentionally different
 
-    out=$("$BX" sync 2>&1) || true
+    out=$("$ARX" sync 2>&1) || true
     if printf '%s' "$out" | grep -qF "CONFLICT"; then
         pass "sync: reports SHA conflict"
     else
@@ -826,9 +826,9 @@ test_sync() {
     fi
 
     # --force-file: refs should be overwritten with file's SHA
-    "$BX" sync --force-file > /dev/null
+    "$ARX" sync --force-file > /dev/null
     local resolved
-    resolved=$(git rev-parse refs/bx/feature/alpha)
+    resolved=$(git rev-parse refs/arx/feature/alpha)
     if [[ "$resolved" == "$SHA_ALPHA" ]]; then
         pass "sync --force-file: refs updated to file's SHA"
     else
@@ -838,9 +838,9 @@ test_sync() {
     # --force-refs: file should be overwritten with refs' SHA
     reset_archive
     set_storage both
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
-    git update-ref "refs/bx/feature/alpha" "$SHA_BETA"
-    "$BX" sync --force-refs > /dev/null
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    git update-ref "refs/arx/feature/alpha" "$SHA_BETA"
+    "$ARX" sync --force-refs > /dev/null
     if grep -qF "$SHA_BETA" .gitarchive; then
         pass "sync --force-refs: file updated to refs' SHA"
     else
@@ -850,9 +850,9 @@ test_sync() {
     # --dry-run --force-file: shows what would happen without writing
     reset_archive
     set_storage both
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
-    git update-ref "refs/bx/feature/alpha" "$SHA_BETA"
-    out=$("$BX" sync --dry-run --force-file 2>&1)
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    git update-ref "refs/arx/feature/alpha" "$SHA_BETA"
+    out=$("$ARX" sync --dry-run --force-file 2>&1)
     if printf '%s' "$out" | grep -qF "Resolved (force-file)"; then
         pass "sync --dry-run --force-file: shows resolved message"
     else
@@ -867,7 +867,7 @@ test_sync() {
     fi
     # Verify no write happened: refs should still have SHA_BETA
     local still_beta
-    still_beta=$(git rev-parse refs/bx/feature/alpha)
+    still_beta=$(git rev-parse refs/arx/feature/alpha)
     if [[ "$still_beta" == "$SHA_BETA" ]]; then
         pass "sync --dry-run --force-file: does not write"
     else
@@ -877,9 +877,9 @@ test_sync() {
     # --dry-run --force-refs: shows what would happen without writing
     reset_archive
     set_storage both
-    printf '# git-bx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
-    git update-ref "refs/bx/feature/alpha" "$SHA_BETA"
-    out=$("$BX" sync --dry-run --force-refs 2>&1)
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    git update-ref "refs/arx/feature/alpha" "$SHA_BETA"
+    out=$("$ARX" sync --dry-run --force-refs 2>&1)
     if printf '%s' "$out" | grep -qF "Resolved (force-refs)"; then
         pass "sync --dry-run --force-refs: shows resolved message"
     else
@@ -901,12 +901,12 @@ test_sync() {
 
     # sync requires both
     set_storage file
-    assert_out   "sync: error when file-only" "requires both storage" "$BX" sync
-    assert_fails "sync: nonzero when file-only"                       "$BX" sync
+    assert_out   "sync: error when file-only" "requires both storage" "$ARX" sync
+    assert_fails "sync: nonzero when file-only"                       "$ARX" sync
 
     set_storage refs
-    assert_out   "sync: error when refs-only" "requires both storage" "$BX" sync
-    assert_fails "sync: nonzero when refs-only"                       "$BX" sync
+    assert_out   "sync: error when refs-only" "requires both storage" "$ARX" sync
+    assert_fails "sync: nonzero when refs-only"                       "$ARX" sync
 
     set_storage file
 }
@@ -915,15 +915,15 @@ test_slashed_branches() {
     section "branch names with slashes"
     reset_archive
 
-    "$BX" add feature/alpha > /dev/null
-    assert_out "slash: in file list" "feature/alpha" "$BX" list
+    "$ARX" add feature/alpha > /dev/null
+    assert_out "slash: in file list" "feature/alpha" "$ARX" list
 
     set_storage refs
-    "$BX" add feature/alpha > /dev/null
-    if git rev-parse --verify refs/bx/feature/alpha > /dev/null 2>&1; then
-        pass "slash: correct ref path refs/bx/feature/alpha"
+    "$ARX" add feature/alpha > /dev/null
+    if git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
+        pass "slash: correct ref path refs/arx/feature/alpha"
     else
-        fail "slash: should be at refs/bx/feature/alpha"
+        fail "slash: should be at refs/arx/feature/alpha"
     fi
 
     set_storage file
@@ -933,8 +933,8 @@ test_double_add() {
     section "double add (idempotent)"
     reset_archive
 
-    "$BX" add feature/alpha > /dev/null
-    "$BX" add feature/alpha > /dev/null  # second add — should update, not duplicate
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" add feature/alpha > /dev/null  # second add — should update, not duplicate
 
     local count
     count=$(grep -c "^feature/alpha " .gitarchive 2>/dev/null || true)
@@ -949,24 +949,24 @@ test_error_cases() {
     section "error cases"
     reset_archive
 
-    assert_out   "unknown cmd: error message" "unknown command"    "$BX" bogus
-    assert_fails "unknown cmd: nonzero"                            "$BX" bogus
+    assert_out   "unknown cmd: error message" "unknown command"    "$ARX" bogus
+    assert_fails "unknown cmd: nonzero"                            "$ARX" bogus
 
     local notrepo="$TMPROOT/notrepo"
     mkdir -p "$notrepo"
     assert_out   "not-in-repo: error"   "not inside a git repository" \
-        bash -c "cd '$notrepo' && '$BX' list"
+        bash -c "cd '$notrepo' && '$ARX' list"
     assert_fails "not-in-repo: nonzero" \
-        bash -c "cd '$notrepo' && '$BX' list"
+        bash -c "cd '$notrepo' && '$ARX' list"
 
     set_storage file
-    assert_out   "push: requires refs" "requires refs storage" "$BX" push
-    assert_out   "pull: requires refs" "requires refs storage" "$BX" pull
-    assert_out   "sync: requires both" "requires both storage" "$BX" sync
+    assert_out   "push: requires refs" "requires refs storage" "$ARX" push
+    assert_out   "pull: requires refs" "requires refs storage" "$ARX" pull
+    assert_out   "sync: requires both" "requires both storage" "$ARX" sync
 
     set_storage refs
     assert_out   "merge: requires file" "requires file storage" \
-        "$BX" merge /dev/null /dev/null -o /dev/null
+        "$ARX" merge /dev/null /dev/null -o /dev/null
 
     set_storage file
 }
@@ -976,11 +976,11 @@ test_error_cases() {
 # ---------------------------------------------------------------------------
 
 main() {
-    printf 'git-bx integration test suite\n'
-    printf 'Script: %s\n\n' "$BX"
+    printf 'git-arx integration test suite\n'
+    printf 'Script: %s\n\n' "$ARX"
 
-    if [[ ! -x "$BX" ]]; then
-        printf 'ERROR: git-bx not found or not executable at %s\n' "$BX" >&2
+    if [[ ! -x "$ARX" ]]; then
+        printf 'ERROR: git-arx not found or not executable at %s\n' "$ARX" >&2
         exit 1
     fi
 

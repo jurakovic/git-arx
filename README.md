@@ -1,10 +1,10 @@
-# git-bx — Branch arXiver
+# git-arx — Branch Archive Tool for Git
 
-A git tool for archiving local branches. When you delete a branch, `git-bx` keeps a record of its name and last commit so you can list, inspect, and restore it later.
+A git tool for archiving local branches. When you delete a branch, `git-arx` keeps a record of its name and last commit so you can list, inspect, and restore it later.
 
 ---
 
-## Why git-bx?
+## Why git-arx?
 
 Every developer eventually accumulates a graveyard of local branches — finished features, abandoned experiments, hotfixes from six months ago. You want to clean them up, but deleting a branch feels permanent. What if you need that commit again? So you leave them. Weeks later you have 40 branches and `git branch` is a wall of noise.
 
@@ -13,10 +13,10 @@ The usual answer is "just use `git reflog`" — but reflog is per-machine, expir
 **Who this is for:**
 
 - **Solo developers** who context-switch between many features and want a clean working tree without anxiety. Archive and delete freely, restore if you ever need to go back.
-- **Teams on shared repos** where you don't always know whose branch is whose. `git bx status` shows the committer, so you can skip archiving a colleague's branch that somehow ended up on your machine.
-- **Anyone doing periodic repo hygiene.** The whole workflow is three commands: `git bx status` to review, `git bx update` to archive, `git bx prune` to delete. Takes 30 seconds.
+- **Teams on shared repos** where you don't always know whose branch is whose. `git arx status` shows the committer, so you can skip archiving a colleague's branch that somehow ended up on your machine.
+- **Anyone doing periodic repo hygiene.** The whole workflow is three commands: `git arx status` to review, `git arx update` to archive, `git arx prune` to delete. Takes 30 seconds.
 
-**Why not just tag the tip commit?** You could — but then you need to remember to do it before deleting, name it something sensible, and maintain your own tagging convention. `git-bx` does this automatically for all branches at once and keeps a searchable list.
+**Why not just tag the tip commit?** You could — but then you need to remember to do it before deleting, name it something sensible, and maintain your own tagging convention. `git-arx` does this automatically for all branches at once and keeps a searchable list.
 
 **Why not GitHub/GitLab's "restore branch" button?** That only works if the branch was ever pushed. Local-only work — experiments, WIP commits, half-baked ideas — never touches the remote. Those are exactly the branches most worth archiving.
 
@@ -29,10 +29,10 @@ Requires **bash 4+** and **git**. Works anywhere those are present.
 | Environment | Status | Notes |
 |---|---|---|
 | Linux | Supported | bash 4+ is standard |
-| Windows — Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
-| Windows — WSL | Supported | Linux environment |
 | macOS — Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
 | macOS — system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
+| Windows — Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
+| Windows — WSL | Supported | Linux environment |
 | PowerShell / CMD | **Not supported** | No bash runtime |
 
 The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error — install bash via Homebrew and confirm `which bash` points to it.
@@ -44,7 +44,7 @@ The bash 4+ requirement comes from `declare -A` (associative arrays). On stock m
 **With curl (no clone needed):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash
 ```
 
 **From a local clone:**
@@ -53,10 +53,10 @@ curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh 
 bash install.sh
 ```
 
-Both methods copy `git-bx` to `~/bin` (Windows/MINGW64) or `~/.local/bin` (Linux/macOS), make it executable, and set the global git alias:
+Both methods copy `git-arx` to `~/.local/bin` (Linux/macOS) or `~/bin` (Windows/MINGW64), make it executable, and set the global git alias:
 
 ```
-git config --global alias.bx '!git-bx'
+git config --global alias.arx '!git-arx'
 ```
 
 If the install directory is not on your `PATH`, the script will tell you what to add to your shell profile.
@@ -65,15 +65,15 @@ If the install directory is not on your `PATH`, the script will tell you what to
 
 ```bash
 bash install.sh /usr/local/bin
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-bx/master/install.sh | bash -s -- /usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash -s -- /usr/local/bin
 ```
 
 **Manual setup (no install script):**
 
 ```bash
-cp git-bx ~/.local/bin/git-bx   # Linux/macOS
-chmod +x ~/.local/bin/git-bx
-git config --global alias.bx '!git-bx'
+cp git-arx ~/.local/bin/git-arx   # Linux/macOS
+chmod +x ~/.local/bin/git-arx
+git config --global alias.arx '!git-arx'
 ```
 
 ---
@@ -82,34 +82,34 @@ git config --global alias.bx '!git-bx'
 
 ```bash
 # Preview which branches would be archived (with author)
-git bx status
+git arx status
 
 # Archive all local branches that have no remote tracking branch
-git bx update
+git arx update
 
 # Delete the branches you just archived
-git bx prune
+git arx prune
 
 # See what's archived
-git bx list
+git arx list
 
 # Inspect commits on an archived branch
-git bx log feature/my-feature --oneline
+git arx log feature/my-feature --oneline
 
 # Restore a branch
-git bx checkout feature/my-feature
+git arx checkout feature/my-feature
 ```
 
 ---
 
 ## Commands
 
-### `git bx status`
+### `git arx status`
 
-Show all local branches with no remote upstream — the same set that `git bx update` would process — along with their current SHA, date, author, and archive status. Nothing is written.
+Show all local branches with no remote upstream — the same set that `git arx update` would process — along with their current SHA, date, author, and archive status. Nothing is written.
 
 ```bash
-git bx status
+git arx status
 # BRANCH                                   SHA       DATE         AUTHOR               STATUS
 # ------                                   ---       ----         ------               ------
 # feature/old-idea                         a1b2c3d4  2025-11-15   Alice Smith          Not archived
@@ -126,16 +126,16 @@ The **STATUS** column reflects the current state of each branch in the archive:
 | `Archived as "<name>"` | SHA is already archived under a different name — `update` would skip it. |
 | `Conflict (archived: <sha>)` | In the archive under this name but with a different SHA — `update` would skip it unless `--force`. |
 
-Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git bx update` to write the archive.
+Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git arx update` to write the archive.
 
 ---
 
-### `git bx update`
+### `git arx update`
 
 Archive all local branches that have no remote tracking branch configured.
 
 ```bash
-git bx update
+git arx update
 # Archived: feature/old-idea
 # Archived: fix/quick-hack
 # Done. Archived 2 branch(es).
@@ -157,7 +157,7 @@ Already safe: feature/my-feature (a1b2c3d4 archived as "feature/my-feature-old")
 Done. Archived 1 branch(es), 1 already safe (SHA archived under different name).
 ```
 
-If you do want the branch indexed under its natural name as well (so that `git bx checkout feature/my-feature` works), run `git bx add feature/my-feature` explicitly.
+If you do want the branch indexed under its natural name as well (so that `git arx checkout feature/my-feature` works), run `git arx add feature/my-feature` explicitly.
 
 **Options:**
 
@@ -167,26 +167,26 @@ If you do want the branch indexed under its natural name as well (so that `git b
 | `--dry-run` | Show which branches would be archived or conflict without writing anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
 
 ```bash
-git bx update --dry-run
-git bx update --force
+git arx update --dry-run
+git arx update --force
 ```
 
-Run `git bx prune` to delete the archived branches from your local repo.
+Run `git arx prune` to delete the archived branches from your local repo.
 
 ---
 
-### `git bx prune`
+### `git arx prune`
 
 Delete all local branches that are currently in the archive. Prompts for confirmation before proceeding.
 
 ```bash
-git bx prune
+git arx prune
 # The following local branches will be permanently deleted:
 #   feature/old-idea
 #   fix/quick-hack
 #
 # WARNING: This is a dangerous operation. Deleted branches cannot be
-# recovered from git — only from the git-bx archive.
+# recovered from git — only from the git-arx archive.
 # Type "yes" to continue: yes
 # Deleted branch feature/old-idea (was a1b2c3d4).
 # Deleted branch fix/quick-hack (was deadbeef).
@@ -203,18 +203,18 @@ If you are currently checked out on an archived branch, it is skipped with a not
 | `--dry-run` | Show which branches would be deleted without deleting anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
 
 ```bash
-git bx prune --force
-git bx prune --dry-run
+git arx prune --force
+git arx prune --dry-run
 ```
 
 ---
 
-### `git bx list`
+### `git arx list`
 
 List all archived branches.
 
 ```bash
-git bx list
+git arx list
 # BRANCH                                   SHA       DATE
 # ------                                   ---       ----
 # feature/my-feature                       a1b2c3d4  2025-11-15
@@ -233,34 +233,34 @@ git bx list
 | `--author` | Add an AUTHOR column showing the last committer on each branch |
 
 ```bash
-git bx list --sort=name --order=asc
-git bx list --storage=refs
-git bx list --storage=file
-git bx list --author
+git arx list --sort=name --order=asc
+git arx list --storage=refs
+git arx list --storage=file
+git arx list --author
 ```
 
 ---
 
-### `git bx log <branch> [git-log-flags...]`
+### `git arx log <branch> [git-log-flags...]`
 
 Show the commit history of an archived branch. All flags are passed directly to `git log`, so anything that works with `git log` works here.
 
 ```bash
-git bx log feature/my-feature
-git bx log feature/my-feature --oneline
-git bx log feature/my-feature --oneline -10
-git bx log feature/my-feature --stat
-git bx log feature/my-feature --format="%h %s" --since="2 weeks ago"
+git arx log feature/my-feature
+git arx log feature/my-feature --oneline
+git arx log feature/my-feature --oneline -10
+git arx log feature/my-feature --stat
+git arx log feature/my-feature --format="%h %s" --since="2 weeks ago"
 ```
 
 ---
 
-### `git bx checkout <branch>`
+### `git arx checkout <branch>`
 
 Restore an archived branch by creating a new local branch at the archived SHA.
 
 ```bash
-git bx checkout feature/my-feature
+git arx checkout feature/my-feature
 # Switched to a new branch 'feature/my-feature'
 # Restored branch: feature/my-feature at a1b2c3d4
 ```
@@ -268,20 +268,20 @@ git bx checkout feature/my-feature
 If the commit no longer exists (garbage collected), you will see a warning:
 
 ```
-git-bx: WARNING: SHA a1b2c3d4 for branch "feature/my-feature" appears to have been garbage collected.
-The branch cannot be restored. You can remove it with: git bx remove feature/my-feature
+git-arx: WARNING: SHA a1b2c3d4 for branch "feature/my-feature" appears to have been garbage collected.
+The branch cannot be restored. You can remove it with: git arx remove feature/my-feature
 ```
 
 If a local branch with the same name already exists, the command exits with an error rather than overwriting it.
 
 ---
 
-### `git bx add <branch> [archive-name] [--force]`
+### `git arx add <branch> [archive-name] [--force]`
 
 Archive a single branch manually. Stores its name and current HEAD SHA.
 
 ```bash
-git bx add feature/my-feature
+git arx add feature/my-feature
 # Archived: feature/my-feature at a1b2c3d4
 ```
 
@@ -294,9 +294,9 @@ Already archived: feature/my-feature at a1b2c3d4
 If the branch is already in the archive with a **different SHA** (a conflict), the command exits with an error and suggests two options:
 
 ```
-git-bx: conflict: "feature/my-feature" is already archived at a1b2c3d4 (current: deadbeef)
-To overwrite:                  git bx add feature/my-feature --force
-To archive under a new name:   git bx add feature/my-feature <archive-name>
+git-arx: conflict: "feature/my-feature" is already archived at a1b2c3d4 (current: deadbeef)
+To overwrite:                  git arx add feature/my-feature --force
+To archive under a new name:   git arx add feature/my-feature <archive-name>
 ```
 
 If the branch's current SHA is **already archived under a different name**, a note is printed before archiving — the command still proceeds, since you explicitly asked for it:
@@ -315,20 +315,20 @@ Archived: feature/my-feature at a1b2c3d4
 
 ```bash
 # Overwrite the existing archive entry
-git bx add feature/my-feature --force
+git arx add feature/my-feature --force
 
 # Store under a different name to avoid conflict
-git bx add feature/my-feature feature/my-feature-old
+git arx add feature/my-feature feature/my-feature-old
 ```
 
 ---
 
-### `git bx remove <branch>`
+### `git arx remove <branch>`
 
 Remove a branch from the archive.
 
 ```bash
-git bx remove feature/my-feature
+git arx remove feature/my-feature
 # Removed: feature/my-feature
 ```
 
@@ -336,12 +336,12 @@ This does not delete the local branch — only removes it from the archive.
 
 ---
 
-### `git bx rename <old-name> <new-name>`
+### `git arx rename <old-name> <new-name>`
 
 Rename an archived branch. Updates the entry in all enabled backends.
 
 ```bash
-git bx rename feature/my-feature feature/my-feature-v1
+git arx rename feature/my-feature feature/my-feature-v1
 # Renamed: feature/my-feature -> feature/my-feature-v1
 ```
 
@@ -349,23 +349,23 @@ The command exits with an error if the old name is not in the archive, or if the
 
 **Why this is useful — git ref namespace collisions:**
 
-The refs backend stores entries as git refs under `refs/bx/<branch-name>`. Because git refs are hierarchical (stored as files in a directory tree), a branch named `update` stored as `refs/bx/update` and a branch named `update/packages` stored as `refs/bx/update/packages` cannot coexist — `refs/bx/update` is either a file or a directory, not both.
+The refs backend stores entries as git refs under `refs/arx/<branch-name>`. Because git refs are hierarchical (stored as files in a directory tree), a branch named `update` stored as `refs/arx/update` and a branch named `update/packages` stored as `refs/arx/update/packages` cannot coexist — `refs/arx/update` is either a file or a directory, not both.
 
 If this situation arises, rename the existing shorter entry first:
 
 ```bash
-git bx rename update update-legacy
-git bx add update/packages   # now refs/bx/update/ can be created
+git arx rename update update-legacy
+git arx add update/packages   # now refs/arx/update/ can be created
 ```
 
 ---
 
-### `git bx merge <file1> <file2> -o <output>`
+### `git arx merge <file1> <file2> -o <output>`
 
 Merge two `.gitarchive` files into one. Useful when syncing archives between machines without a shared remote.
 
 ```bash
-git bx merge .gitarchive /backup/.gitarchive -o merged.gitarchive
+git arx merge .gitarchive /backup/.gitarchive -o merged.gitarchive
 # Merged 14 entries to merged.gitarchive (1 conflict(s) skipped)
 ```
 
@@ -373,54 +373,54 @@ git bx merge .gitarchive /backup/.gitarchive -o merged.gitarchive
 - Entries present in both files with the **same SHA** are deduplicated.
 - Entries present in both files with **different SHAs** are reported as conflicts and skipped — they will not appear in the output.
 
-Requires `bx.storefile` to be enabled.
+Requires `arx.storefile` to be enabled.
 
 ---
 
-### `git bx push`
+### `git arx push`
 
 Push archived refs to the remote, making them available to other clones of the repository.
 
 ```bash
-git bx push
+git arx push
 # To origin
-#  * [new ref]   refs/bx/feature/my-feature -> refs/bx/feature/my-feature
+#  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
 ```
 
 Use `--dry-run` to see what would be pushed without actually pushing:
 
 ```bash
-git bx push --dry-run
+git arx push --dry-run
 # To origin
-#  * [new ref]   refs/bx/feature/my-feature -> refs/bx/feature/my-feature
+#  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
 # (dry run — no changes written)
 ```
 
-Requires `bx.storerefs` to be enabled.
+Requires `arx.storerefs` to be enabled.
 
 ---
 
-### `git bx pull`
+### `git arx pull`
 
-Fetch archived refs from the remote. If `bx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
+Fetch archived refs from the remote. If `arx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
 
 ```bash
-git bx pull
+git arx pull
 # From origin
-#  * [new ref]   refs/bx/feature/my-feature -> refs/bx/feature/my-feature
+#  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
 # Synced fetched refs to .gitarchive
 ```
 
-Requires `bx.storerefs` to be enabled.
+Requires `arx.storerefs` to be enabled.
 
 ---
 
-### `git bx sync`
+### `git arx sync`
 
 Reconcile the two local storage backends when they have drifted out of sync. Performs a union merge: anything present in either backend is written to both.
 
 ```bash
-git bx sync
+git arx sync
 # Synced to file: feature/old-idea
 # Sync complete.
 ```
@@ -434,18 +434,18 @@ git bx sync
 | `--force-refs` | Treat refs as the source of truth: resolve SHA conflicts using the ref's SHA, and delete any file-only entries from the file (they are absent from refs). |
 
 ```bash
-git bx sync --dry-run
+git arx sync --dry-run
 # Synced to file: feature/old-idea
 # Sync complete.
 # (dry run — no changes written)
 
-git bx sync --dry-run --force-refs
+git arx sync --dry-run --force-refs
 # Resolved (force-refs): feature/old-idea -> file=a1b2c3d4
 # Removed from file (force-refs): fix/dead-end
 # Sync complete.
 # (dry run — no changes written)
 
-git bx sync --force-refs
+git arx sync --force-refs
 # Resolved (force-refs): feature/old-idea -> file=a1b2c3d4
 # Removed from file (force-refs): fix/dead-end
 # Sync complete.
@@ -453,41 +453,41 @@ git bx sync --force-refs
 
 If `sync` encounters a SHA conflict and no `--force-*` flag is given, it reports the conflict and exits with a non-zero status. Entries without conflicts are still synced.
 
-Requires both `bx.storerefs` and `bx.storefile` to be enabled.
+Requires both `arx.storerefs` and `arx.storefile` to be enabled.
 
 ---
 
-Run `git bx help` (or `--help`, `-h`) to print the built-in usage summary at any time.
+Run `git arx help` (or `--help`, `-h`) to print the built-in usage summary at any time.
 
 ---
 
 ## Storage Backends
 
-### Refs backend — `refs/bx/` (enabled by default)
+### Refs backend — `refs/arx/` (enabled by default)
 
-Git refs stored under `refs/bx/<branch-name>` inside `.git/refs/`. These are standard git refs that git tracks natively.
+Git refs stored under `refs/arx/<branch-name>` inside `.git/refs/`. These are standard git refs that git tracks natively.
 
 ```bash
 # Inspect directly
-git show-ref | grep refs/bx/
-git log refs/bx/feature/my-feature --oneline
+git show-ref | grep refs/arx/
+git log refs/arx/feature/my-feature --oneline
 ```
 
 **Strengths:**
 - As long as a ref exists, `git gc` will never prune the commit it points to — archived commits are safe
 - Native git integration — any git command that accepts a ref or SHA works
-- Can be shared via `git bx push` / `git bx pull`
+- Can be shared via `git arx push` / `git arx pull`
 
-**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git bx push`).
+**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git arx push`).
 
-**Why it's on by default:** The primary promise of git-bx is that you can archive a branch and restore it later. If only the file backend is used, a `git gc` run after deletion can silently prune the archived commit — the record in `.gitarchive` becomes a dead pointer. The refs backend prevents this at no cost to the user. Safety first.
+**Why it's on by default:** The primary promise of git-arx is that you can archive a branch and restore it later. If only the file backend is used, a `git gc` run after deletion can silently prune the archived commit — the record in `.gitarchive` becomes a dead pointer. The refs backend prevents this at no cost to the user. Safety first.
 
 ### File backend — `.gitarchive` (disabled by default)
 
-A plain text file at the repository root (or wherever `bx.file` points). One entry per line:
+A plain text file at the repository root (or wherever `arx.file` points). One entry per line:
 
 ```
-# git-bx archive — do not edit manually
+# git-arx archive — do not edit manually
 feature/my-feature a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 2025-11-15T10:30:00+01:00
 fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 ```
@@ -496,7 +496,7 @@ fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 - Human-readable — inspect it with any text editor or `cat .gitarchive`
 - Portable — copy it anywhere, email it, commit it to the repo
 - If committed to the repository, it syncs automatically with every `git push`/`git pull`
-- Can be merged between machines with `git bx merge`
+- Can be merged between machines with `git arx merge`
 
 **Weakness:** The archive is just a text file. Git does not know it exists, so commits referenced in it can be pruned by `git gc` once they become unreachable (if the refs backend is also disabled).
 
@@ -507,11 +507,11 @@ fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 Enable both for maximum coverage — refs protect commits from GC, while the file provides a portable, human-readable backup that can be committed to the repo and shared via normal `git push`/`git pull`.
 
 ```bash
-git config bx.storerefs true
-git config bx.storefile true
+git config arx.storerefs true
+git config arx.storefile true
 ```
 
-With both enabled, writes go to both backends; reads prefer refs and supplement with any file-only entries. The `git bx sync` command reconciles the two if they drift.
+With both enabled, writes go to both backends; reads prefer refs and supplement with any file-only entries. The `git arx sync` command reconciles the two if they drift.
 
 ---
 
@@ -519,31 +519,31 @@ With both enabled, writes go to both backends; reads prefer refs and supplement 
 
 All settings are managed via `git config`. They can be set per-repo or globally.
 
-### `bx.storerefs`
+### `arx.storerefs`
 
-Controls whether the refs backend (`refs/bx/`) is used. Default: `true`.
+Controls whether the refs backend (`refs/arx/`) is used. Default: `true`.
 
 ```bash
-git config bx.storerefs true   # default — GC-safe local storage
-git config bx.storerefs false  # disable if you use file backend only
+git config arx.storerefs true   # default — GC-safe local storage
+git config arx.storerefs false  # disable if you use file backend only
 ```
 
-### `bx.storefile`
+### `arx.storefile`
 
 Controls whether the file backend (`.gitarchive`) is used. Default: `false`.
 
 ```bash
-git config bx.storefile true   # enable for human-readable archives or team sharing
-git config bx.storefile false  # default
+git config arx.storefile true   # enable for human-readable archives or team sharing
+git config arx.storefile false  # default
 ```
 
-### `bx.file`
+### `arx.file`
 
 Path to the archive file, relative to the repository root. Default: `.gitarchive`.
 
 ```bash
-git config bx.file .git/bx-archive   # keep it out of the working tree
-git config bx.file my-archive.txt
+git config arx.file .git/arx-archive   # keep it out of the working tree
+git config arx.file my-archive.txt
 ```
 
 ---
@@ -554,15 +554,15 @@ git config bx.file my-archive.txt
 
 ```bash
 # Archive and delete stale branches in two steps
-git bx update
-git bx prune
+git arx update
+git arx prune
 
 # Later, need to find something
-git bx list
-git bx log feature/done-1 --oneline
+git arx list
+git arx log feature/done-1 --oneline
 
 # Restore if needed
-git bx checkout feature/done-1
+git arx checkout feature/done-1
 ```
 
 ### Syncing across machines (with a shared remote)
@@ -570,15 +570,15 @@ git bx checkout feature/done-1
 The refs backend is enabled by default, so just push your archived refs along with your normal push:
 
 ```bash
-git bx update
-git bx push
+git arx update
+git arx push
 ```
 
 On another machine:
 
 ```bash
-git bx pull
-git bx list
+git arx pull
+git arx list
 ```
 
 ### Syncing across machines (no shared remote)
@@ -587,21 +587,21 @@ Use file storage and copy the `.gitarchive` file between machines:
 
 ```bash
 # Machine A
-git bx update
+git arx update
 scp .gitarchive machine-b:~/project/.gitarchive-a
 
 # Machine B
-git bx merge .gitarchive .gitarchive-a -o .gitarchive
+git arx merge .gitarchive .gitarchive-a -o .gitarchive
 ```
 
 Or commit `.gitarchive` to the repository — it will sync along with the rest of the codebase via normal git push/pull.
 
 ### Using the file backend for team sharing
 
-Enable the file backend and commit `.gitarchive` to the repo — it will sync automatically with every `git push`/`git pull`, no `git bx push/pull` needed:
+Enable the file backend and commit `.gitarchive` to the repo — it will sync automatically with every `git push`/`git pull`, no `git arx push/pull` needed:
 
 ```bash
-git config bx.storefile true
+git config arx.storefile true
 # Optionally commit it so it syncs with the repo
 echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 ```
@@ -611,15 +611,15 @@ echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 If you prefer a visible text file and are not concerned about `git gc`:
 
 ```bash
-git config bx.storefile true
-git config bx.storerefs false
+git config arx.storefile true
+git config arx.storerefs false
 ```
 
 ---
 
 ## Notes
 
-- `git bx add` never creates duplicate entries — the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.
+- `git arx add` never creates duplicate entries — the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
 
 ---

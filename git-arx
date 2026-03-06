@@ -2,58 +2,58 @@
 set -euo pipefail
 
 # =============================================================================
-# git-bx — Branch arXiver
+# git-arx — Branch Archive Tool for Git
 # Archive local git branches that have no remote tracking branch.
-# Usage: git bx <command> [options]
+# Usage: git arx <command> [options]
 # =============================================================================
 
 # --- CONFIG HELPERS ----------------------------------------------------------
 
-_bx_require_git() {
+_arx_require_git() {
     if ! git rev-parse --git-dir > /dev/null 2>&1; then
-        printf 'git-bx: not inside a git repository\n' >&2
+        printf 'git-arx: not inside a git repository\n' >&2
         exit 1
     fi
 }
 
-_bx_git_root() {
+_arx_git_root() {
     git rev-parse --show-toplevel
 }
 
-_bx_config_storerefs() {
-    git config --get bx.storerefs 2>/dev/null || printf 'true'
+_arx_config_storerefs() {
+    git config --get arx.storerefs 2>/dev/null || printf 'true'
 }
 
-_bx_config_storefile() {
-    git config --get bx.storefile 2>/dev/null || printf 'false'
+_arx_config_storefile() {
+    git config --get arx.storefile 2>/dev/null || printf 'false'
 }
 
-_bx_config_file() {
+_arx_config_file() {
     local filename
-    filename=$(git config --get bx.file 2>/dev/null || printf '.gitarchive')
+    filename=$(git config --get arx.file 2>/dev/null || printf '.gitarchive')
     # Resolve relative to repo root, not $PWD
-    printf '%s/%s' "$BX_GIT_ROOT" "$filename"
+    printf '%s/%s' "$ARX_GIT_ROOT" "$filename"
 }
 
-_bx_require_storage() {
+_arx_require_storage() {
     local required="$1"
     local use_refs use_file
-    use_refs=$(_bx_config_storerefs)
-    use_file=$(_bx_config_storefile)
+    use_refs=$(_arx_config_storerefs)
+    use_file=$(_arx_config_storefile)
     case "$required" in
         refs)
             [[ "$use_refs" == "true" ]] && return 0
-            printf 'git-bx: this command requires refs storage (set: git config bx.storerefs true)\n' >&2
+            printf 'git-arx: this command requires refs storage (set: git config arx.storerefs true)\n' >&2
             exit 1
             ;;
         file)
             [[ "$use_file" == "true" ]] && return 0
-            printf 'git-bx: this command requires file storage (set: git config bx.storefile true)\n' >&2
+            printf 'git-arx: this command requires file storage (set: git config arx.storefile true)\n' >&2
             exit 1
             ;;
         both)
             [[ "$use_refs" == "true" && "$use_file" == "true" ]] && return 0
-            printf 'git-bx: this command requires both storage backends (bx.storerefs and bx.storefile must both be true)\n' >&2
+            printf 'git-arx: this command requires both storage backends (arx.storerefs and arx.storefile must both be true)\n' >&2
             exit 1
             ;;
     esac
@@ -61,9 +61,9 @@ _bx_require_storage() {
 
 # --- BACKEND: FILE -----------------------------------------------------------
 
-_bx_file_read() {
+_arx_file_read() {
     local archive
-    archive=$(_bx_config_file)
+    archive=$(_arx_config_file)
     [[ -f "$archive" ]] || return 0
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip blank lines and comment lines
@@ -72,10 +72,10 @@ _bx_file_read() {
     done < "$archive"
 }
 
-_bx_file_write() {
+_arx_file_write() {
     local branch="$1" sha="$2" date="$3"
     local archive tmpfile
-    archive=$(_bx_config_file)
+    archive=$(_arx_config_file)
     tmpfile="${archive}.tmp.$$"
 
     # Start fresh temp file; preserve header comment if archive exists
@@ -89,7 +89,7 @@ _bx_file_write() {
             fi
         done < "$archive"
     else
-        printf '# git-bx archive — do not edit manually\n' > "$tmpfile"
+        printf '# git-arx archive — do not edit manually\n' > "$tmpfile"
     fi
 
     printf '%s %s %s\n' "$branch" "$sha" "$date" >> "$tmpfile"
@@ -99,10 +99,10 @@ _bx_file_write() {
     mv "$tmpfile" "$archive"
 }
 
-_bx_file_delete() {
+_arx_file_delete() {
     local branch="$1"
     local archive tmpfile
-    archive=$(_bx_config_file)
+    archive=$(_arx_config_file)
     [[ -f "$archive" ]] || return 0
     tmpfile="${archive}.tmp.$$"
 
@@ -117,101 +117,101 @@ _bx_file_delete() {
 
 # --- BACKEND: REFS -----------------------------------------------------------
 
-_bx_refs_read() {
-    # %(refname:short) strips "refs/" giving "bx/feature/login"
+_arx_refs_read() {
+    # %(refname:short) strips "refs/" giving "arx/feature/login"
     git for-each-ref \
         --format='%(refname:short) %(objectname) %(creatordate:iso-strict)' \
-        'refs/bx/' \
+        'refs/arx/' \
     | while IFS=' ' read -r refshort sha date rest; do
-        local branch="${refshort#bx/}"
+        local branch="${refshort#arx/}"
         printf '%s %s %s\n' "$branch" "$sha" "$date"
     done
 }
 
-_bx_refs_write() {
+_arx_refs_write() {
     local branch="$1" sha="$2"
-    git update-ref "refs/bx/${branch}" "$sha"
+    git update-ref "refs/arx/${branch}" "$sha"
 }
 
-_bx_refs_delete() {
+_arx_refs_delete() {
     local branch="$1"
-    git update-ref -d "refs/bx/${branch}" 2>/dev/null || true
+    git update-ref -d "refs/arx/${branch}" 2>/dev/null || true
 }
 
 # --- ABSTRACTION LAYER -------------------------------------------------------
 
-_bx_read_all() {
+_arx_read_all() {
     local use_refs use_file
-    use_refs=$(_bx_config_storerefs)
-    use_file=$(_bx_config_storefile)
+    use_refs=$(_arx_config_storerefs)
+    use_file=$(_arx_config_storefile)
     if [[ "$use_refs" == "true" && "$use_file" == "true" ]]; then
         # Union merge: refs are primary; supplement with file-only entries
         declare -A seen
         while IFS=' ' read -r branch sha date rest; do
             seen["$branch"]=1
             printf '%s %s %s\n' "$branch" "$sha" "$date"
-        done < <(_bx_refs_read)
+        done < <(_arx_refs_read)
         while IFS=' ' read -r branch sha date rest; do
             if [[ -z "${seen[$branch]+x}" ]]; then
                 printf '%s %s %s\n' "$branch" "$sha" "$date"
             fi
-        done < <(_bx_file_read)
+        done < <(_arx_file_read)
     elif [[ "$use_refs" == "true" ]]; then
-        _bx_refs_read
+        _arx_refs_read
     elif [[ "$use_file" == "true" ]]; then
-        _bx_file_read
+        _arx_file_read
     else
-        printf 'git-bx: no storage backend enabled (set bx.storerefs=true or bx.storefile=true)\n' >&2
+        printf 'git-arx: no storage backend enabled (set arx.storerefs=true or arx.storefile=true)\n' >&2
         exit 1
     fi
 }
 
-_bx_write() {
+_arx_write() {
     local branch="$1" sha="$2" date="$3"
     local use_refs use_file
-    use_refs=$(_bx_config_storerefs)
-    use_file=$(_bx_config_storefile)
+    use_refs=$(_arx_config_storerefs)
+    use_file=$(_arx_config_storefile)
     if [[ "$use_file" == "true" ]]; then
-        _bx_file_write "$branch" "$sha" "$date"
+        _arx_file_write "$branch" "$sha" "$date"
     fi
     if [[ "$use_refs" == "true" ]]; then
-        _bx_refs_write "$branch" "$sha"
+        _arx_refs_write "$branch" "$sha"
     fi
 }
 
-_bx_delete() {
+_arx_delete() {
     local branch="$1"
     local use_refs use_file
-    use_refs=$(_bx_config_storerefs)
-    use_file=$(_bx_config_storefile)
+    use_refs=$(_arx_config_storerefs)
+    use_file=$(_arx_config_storefile)
     if [[ "$use_file" == "true" ]]; then
-        _bx_file_delete "$branch"
+        _arx_file_delete "$branch"
     fi
     if [[ "$use_refs" == "true" ]]; then
-        _bx_refs_delete "$branch"
+        _arx_refs_delete "$branch"
     fi
 }
 
-_bx_lookup_branch() {
+_arx_lookup_branch() {
     local branch="$1"
-    _bx_read_all | while IFS=' ' read -r b sha date rest; do
+    _arx_read_all | while IFS=' ' read -r b sha date rest; do
         if [[ "$b" == "$branch" ]]; then
             printf '%s %s\n' "$sha" "$date"
         fi
     done
 }
 
-_bx_sha_exists() {
+_arx_sha_exists() {
     local sha="$1"
     git cat-file -e "$sha" 2>/dev/null
 }
 
-_bx_lookup_sha() {
+_arx_lookup_sha() {
     local target_sha="$1" match_name sha date rest
     local -a names=()
     while IFS=' ' read -r match_name sha date rest; do
         [[ "$sha" == "$target_sha" ]] && names+=("$match_name") || true
-    done < <(_bx_read_all)
+    done < <(_arx_read_all)
     [[ ${#names[@]} -gt 0 ]] && printf '%s' "${names[*]}" || true
 }
 
@@ -222,20 +222,20 @@ cmd_add() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --force|-f) force=1 ;;
-            --*) printf 'git-bx: unknown option "%s"\n' "$1" >&2; exit 1 ;;
+            --*) printf 'git-arx: unknown option "%s"\n' "$1" >&2; exit 1 ;;
             *)
                 if [[ -z "$branch" ]]; then branch="$1"
                 elif [[ -z "$archive_name" ]]; then archive_name="$1"
-                else printf 'git-bx: unexpected argument "%s"\n' "$1" >&2; exit 1
+                else printf 'git-arx: unexpected argument "%s"\n' "$1" >&2; exit 1
                 fi ;;
         esac
         shift
     done
 
-    [[ -z "$branch" ]] && { printf 'Usage: git bx add <branch> [archive-name] [--force]\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git arx add <branch> [archive-name] [--force]\n' >&2; exit 1; }
 
     if ! git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
-        printf 'git-bx: branch "%s" not found in local branches\n' "$branch" >&2
+        printf 'git-arx: branch "%s" not found in local branches\n' "$branch" >&2
         exit 1
     fi
 
@@ -246,7 +246,7 @@ cmd_add() {
     local store_name="${archive_name:-$branch}"
 
     local existing_entry existing_sha
-    existing_entry=$(_bx_lookup_branch "$store_name")
+    existing_entry=$(_arx_lookup_branch "$store_name")
     if [[ -n "$existing_entry" ]]; then
         existing_sha=$(printf '%s' "$existing_entry" | awk '{print $1}')
         if [[ "$existing_sha" == "$sha" ]]; then
@@ -254,23 +254,23 @@ cmd_add() {
             return 0
         fi
         if [[ $force -eq 0 ]]; then
-            printf 'git-bx: conflict: "%s" is already archived at %s (current: %s)\n' \
+            printf 'git-arx: conflict: "%s" is already archived at %s (current: %s)\n' \
                 "$store_name" "${existing_sha:0:8}" "${sha:0:8}" >&2
-            printf 'To overwrite:                  git bx add %s --force\n' "$branch" >&2
+            printf 'To overwrite:                  git arx add %s --force\n' "$branch" >&2
             if [[ -z "$archive_name" ]]; then
-                printf 'To archive under a new name:   git bx add %s <archive-name>\n' "$branch" >&2
+                printf 'To archive under a new name:   git arx add %s <archive-name>\n' "$branch" >&2
             fi
             exit 1
         fi
     fi
 
     local existing_as
-    existing_as=$(_bx_lookup_sha "$sha")
+    existing_as=$(_arx_lookup_sha "$sha")
     if [[ -n "$existing_as" ]]; then
         printf 'Note: %s is already archived as "%s"\n' "${sha:0:8}" "$existing_as"
     fi
 
-    _bx_write "$store_name" "$sha" "$date"
+    _arx_write "$store_name" "$sha" "$date"
     if [[ -n "$archive_name" ]]; then
         printf 'Archived: %s (as %s) at %s\n' "$branch" "$store_name" "${sha:0:8}"
     else
@@ -280,39 +280,39 @@ cmd_add() {
 
 cmd_remove() {
     local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bx remove <branch>\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git arx remove <branch>\n' >&2; exit 1; }
 
     local entry
-    entry=$(_bx_lookup_branch "$branch")
+    entry=$(_arx_lookup_branch "$branch")
     if [[ -z "$entry" ]]; then
-        printf 'git-bx: branch "%s" not found in archive\n' "$branch" >&2
+        printf 'git-arx: branch "%s" not found in archive\n' "$branch" >&2
         exit 1
     fi
 
-    _bx_delete "$branch"
+    _arx_delete "$branch"
     printf 'Removed: %s\n' "$branch"
 }
 
 cmd_rename() {
     local old_name="${1:-}" new_name="${2:-}"
     if [[ -z "$old_name" || -z "$new_name" ]]; then
-        printf 'Usage: git bx rename <old-name> <new-name>\n' >&2; exit 1
+        printf 'Usage: git arx rename <old-name> <new-name>\n' >&2; exit 1
     fi
     if [[ "$old_name" == "$new_name" ]]; then
-        printf 'git-bx: old and new names are identical\n' >&2; exit 1
+        printf 'git-arx: old and new names are identical\n' >&2; exit 1
     fi
 
     local entry
-    entry=$(_bx_lookup_branch "$old_name")
+    entry=$(_arx_lookup_branch "$old_name")
     if [[ -z "$entry" ]]; then
-        printf 'git-bx: branch "%s" not found in archive\n' "$old_name" >&2
+        printf 'git-arx: branch "%s" not found in archive\n' "$old_name" >&2
         exit 1
     fi
 
     local existing
-    existing=$(_bx_lookup_branch "$new_name")
+    existing=$(_arx_lookup_branch "$new_name")
     if [[ -n "$existing" ]]; then
-        printf 'git-bx: "%s" already exists in archive\n' "$new_name" >&2
+        printf 'git-arx: "%s" already exists in archive\n' "$new_name" >&2
         exit 1
     fi
 
@@ -320,8 +320,8 @@ cmd_rename() {
     sha=$(printf '%s' "$entry" | awk '{print $1}')
     date=$(printf '%s' "$entry" | awk '{print $2}')
 
-    _bx_write "$new_name" "$sha" "$date"
-    _bx_delete "$old_name"
+    _arx_write "$new_name" "$sha" "$date"
+    _arx_delete "$old_name"
     printf 'Renamed: %s -> %s\n' "$old_name" "$new_name"
 }
 
@@ -331,7 +331,7 @@ cmd_update() {
         case "$arg" in
             --dry-run)  dry_run=1 ;;
             --force|-f) force=1 ;;
-            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
@@ -341,7 +341,7 @@ cmd_update() {
     while IFS=' ' read -r b sha date rest; do
         arc_by_name["$b"]="$sha"
         [[ -z "${arc_by_sha[$sha]:-}" ]] && arc_by_sha["$sha"]="$b" || true
-    done < <(_bx_read_all)
+    done < <(_arx_read_all)
 
     local archived=0 conflicts=0 already_safe=0
     while IFS=$'\t' read -r branch sha date upstream_ref; do
@@ -368,7 +368,7 @@ cmd_update() {
                 fi
                 continue
             fi
-            [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
+            [[ $dry_run -eq 0 ]] && _arx_write "$branch" "$sha" "$date"
             arc_by_name[$branch]="$sha"
             arc_by_sha[$sha]="$branch"
             printf 'Updated: %s at %s\n' "$branch" "${sha:0:8}"
@@ -383,7 +383,7 @@ cmd_update() {
             continue
         fi
 
-        [[ $dry_run -eq 0 ]] && _bx_write "$branch" "$sha" "$date"
+        [[ $dry_run -eq 0 ]] && _arx_write "$branch" "$sha" "$date"
         arc_by_name[$branch]="$sha"
         arc_by_sha[$sha]="$branch"
         printf 'Archived: %s\n' "$branch"
@@ -402,12 +402,12 @@ cmd_update() {
 
 cmd_status() {
     # Load entire archive once into associative arrays for O(1) lookup,
-    # avoiding repeated _bx_read_all calls inside the branch loop.
+    # avoiding repeated _arx_read_all calls inside the branch loop.
     declare -A arc_by_name arc_by_sha
     while IFS=' ' read -r b sha date rest; do
         arc_by_name["$b"]="$sha"
         [[ -z "${arc_by_sha[$sha]:-}" ]] && arc_by_sha["$sha"]="$b" || true
-    done < <(_bx_read_all)
+    done < <(_arx_read_all)
 
     local -a rows=()
     # Single for-each-ref call fetches SHA, date, author, and upstream for
@@ -468,22 +468,22 @@ cmd_list() {
             --storage=both|--storage=file|--storage=refs)
                 list_storage="${arg#--storage=}" ;;
             --storage=*)
-                printf 'git-bx: invalid --storage value "%s" (use: file, refs, both)\n' "${arg#--storage=}" >&2
+                printf 'git-arx: invalid --storage value "%s" (use: file, refs, both)\n' "${arg#--storage=}" >&2
                 exit 1 ;;
-            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
     # Validate that the requested backend is available in the current storage config
     if [[ -n "$list_storage" ]]; then
-        _bx_require_storage "$list_storage"
+        _arx_require_storage "$list_storage"
     fi
 
     local entries
     case "$list_storage" in
-        file) entries=$(_bx_file_read) ;;
-        refs) entries=$(_bx_refs_read) ;;
-        *)    entries=$(_bx_read_all) ;;
+        file) entries=$(_arx_file_read) ;;
+        refs) entries=$(_arx_refs_read) ;;
+        *)    entries=$(_arx_read_all) ;;
     esac
 
     if [[ -z "$entries" ]]; then
@@ -533,22 +533,22 @@ cmd_list() {
 
 cmd_log() {
     local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bx log <branch> [git-log-options...]\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git arx log <branch> [git-log-options...]\n' >&2; exit 1; }
     shift  # remove branch name; remaining "$@" are git log flags
 
     local entry
-    entry=$(_bx_lookup_branch "$branch")
+    entry=$(_arx_lookup_branch "$branch")
     if [[ -z "$entry" ]]; then
-        printf 'git-bx: branch "%s" not found in archive\n' "$branch" >&2
+        printf 'git-arx: branch "%s" not found in archive\n' "$branch" >&2
         exit 1
     fi
 
     local sha
     sha=$(printf '%s' "$entry" | awk '{print $1}')
 
-    if ! _bx_sha_exists "$sha"; then
-        printf 'git-bx: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
-        printf 'The commit history is no longer available. You can remove it with: git bx remove %s\n' "$branch" >&2
+    if ! _arx_sha_exists "$sha"; then
+        printf 'git-arx: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
+        printf 'The commit history is no longer available. You can remove it with: git arx remove %s\n' "$branch" >&2
         exit 1
     fi
 
@@ -557,26 +557,26 @@ cmd_log() {
 
 cmd_checkout() {
     local branch="${1:-}"
-    [[ -z "$branch" ]] && { printf 'Usage: git bx checkout <branch>\n' >&2; exit 1; }
+    [[ -z "$branch" ]] && { printf 'Usage: git arx checkout <branch>\n' >&2; exit 1; }
 
     local entry
-    entry=$(_bx_lookup_branch "$branch")
+    entry=$(_arx_lookup_branch "$branch")
     if [[ -z "$entry" ]]; then
-        printf 'git-bx: branch "%s" not found in archive\n' "$branch" >&2
+        printf 'git-arx: branch "%s" not found in archive\n' "$branch" >&2
         exit 1
     fi
 
     local sha
     sha=$(printf '%s' "$entry" | awk '{print $1}')
 
-    if ! _bx_sha_exists "$sha"; then
-        printf 'git-bx: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
-        printf 'The branch cannot be restored. You can remove it with: git bx remove %s\n' "$branch" >&2
+    if ! _arx_sha_exists "$sha"; then
+        printf 'git-arx: WARNING: SHA %s for branch "%s" appears to have been garbage collected.\n' "${sha:0:8}" "$branch" >&2
+        printf 'The branch cannot be restored. You can remove it with: git arx remove %s\n' "$branch" >&2
         exit 1
     fi
 
     if git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
-        printf 'git-bx: a local branch named "%s" already exists\n' "$branch" >&2
+        printf 'git-arx: a local branch named "%s" already exists\n' "$branch" >&2
         exit 1
     fi
 
@@ -585,7 +585,7 @@ cmd_checkout() {
 }
 
 cmd_merge() {
-    _bx_require_storage file
+    _arx_require_storage file
 
     local file1="" file2="" output=""
     while [[ $# -gt 0 ]]; do
@@ -594,7 +594,7 @@ cmd_merge() {
             *)
                 if [[ -z "$file1" ]]; then file1="$1"
                 elif [[ -z "$file2" ]]; then file2="$1"
-                else printf 'git-bx: unexpected argument "%s"\n' "$1" >&2; exit 1
+                else printf 'git-arx: unexpected argument "%s"\n' "$1" >&2; exit 1
                 fi
                 ;;
         esac
@@ -602,10 +602,10 @@ cmd_merge() {
     done
 
     [[ -z "$file1" || -z "$file2" || -z "$output" ]] && {
-        printf 'Usage: git bx merge <file1> <file2> -o <output>\n' >&2; exit 1
+        printf 'Usage: git arx merge <file1> <file2> -o <output>\n' >&2; exit 1
     }
-    [[ -f "$file1" ]] || { printf 'git-bx: file not found: %s\n' "$file1" >&2; exit 1; }
-    [[ -f "$file2" ]] || { printf 'git-bx: file not found: %s\n' "$file2" >&2; exit 1; }
+    [[ -f "$file1" ]] || { printf 'git-arx: file not found: %s\n' "$file1" >&2; exit 1; }
+    [[ -f "$file2" ]] || { printf 'git-arx: file not found: %s\n' "$file2" >&2; exit 1; }
 
     declare -A map1 map2
     local line branch sha date
@@ -622,7 +622,7 @@ cmd_merge() {
 
     local merged=0 conflicts=0
     local tmpfile="${output}.tmp.$$"
-    printf '# git-bx archive — merged from %s and %s\n' "$file1" "$file2" > "$tmpfile"
+    printf '# git-arx archive — merged from %s and %s\n' "$file1" "$file2" > "$tmpfile"
 
     # Collect all branch names
     declare -A all_branches
@@ -657,7 +657,7 @@ cmd_merge() {
 }
 
 cmd_sync() {
-    _bx_require_storage both
+    _arx_require_storage both
 
     local dry_run=0 force=""
     for arg in "$@"; do
@@ -665,7 +665,7 @@ cmd_sync() {
             --dry-run)     dry_run=1 ;;
             --force-file)  force="file" ;;
             --force-refs)  force="refs" ;;
-            *) printf 'git-bx: unknown sync option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-arx: unknown sync option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
@@ -674,11 +674,11 @@ cmd_sync() {
 
     while IFS=' ' read -r branch sha date rest; do
         refs_map["$branch"]="$sha $date"
-    done < <(_bx_refs_read)
+    done < <(_arx_refs_read)
 
     while IFS=' ' read -r branch sha date rest; do
         file_map["$branch"]="$sha $date"
-    done < <(_bx_file_read)
+    done < <(_arx_file_read)
 
     declare -A all_branches
     for b in "${!refs_map[@]}" "${!file_map[@]}"; do all_branches["$b"]=1; done
@@ -697,11 +697,11 @@ cmd_sync() {
                 if [[ -n "$force" ]]; then
                     if [[ "$force" == "file" ]]; then
                         local fsha="${fv%% *}" fdate="${fv#* }"
-                        [[ $dry_run -eq 0 ]] && _bx_refs_write "$b" "$fsha"
+                        [[ $dry_run -eq 0 ]] && _arx_refs_write "$b" "$fsha"
                         printf 'Resolved (force-file): %s -> refs=%s\n' "$b" "${fsha:0:8}"
                     else
                         local rsha="${rv%% *}" rdate="${rv#* }"
-                        [[ $dry_run -eq 0 ]] && _bx_file_write "$b" "$rsha" "$rdate"
+                        [[ $dry_run -eq 0 ]] && _arx_file_write "$b" "$rsha" "$rdate"
                         printf 'Resolved (force-refs): %s -> file=%s\n' "$b" "${rsha:0:8}"
                     fi
                 else
@@ -714,20 +714,20 @@ cmd_sync() {
             local rsha="${rv%% *}" rdate="${rv#* }"
             if [[ "$force" == "file" ]]; then
                 # File is authoritative — entry absent from file means remove it from refs
-                [[ $dry_run -eq 0 ]] && _bx_refs_delete "$b"
+                [[ $dry_run -eq 0 ]] && _arx_refs_delete "$b"
                 printf 'Removed from refs (force-file): %s\n' "$b"
             else
-                [[ $dry_run -eq 0 ]] && _bx_file_write "$b" "$rsha" "$rdate"
+                [[ $dry_run -eq 0 ]] && _arx_file_write "$b" "$rsha" "$rdate"
                 printf 'Synced to file: %s\n' "$b"
             fi
         else
             local fsha="${fv%% *}" fdate="${fv#* }"
             if [[ "$force" == "refs" ]]; then
                 # Refs is authoritative — entry absent from refs means remove it from file
-                [[ $dry_run -eq 0 ]] && _bx_file_delete "$b"
+                [[ $dry_run -eq 0 ]] && _arx_file_delete "$b"
                 printf 'Removed from file (force-refs): %s\n' "$b"
             else
-                [[ $dry_run -eq 0 ]] && _bx_refs_write "$b" "$fsha"
+                [[ $dry_run -eq 0 ]] && _arx_refs_write "$b" "$fsha"
                 printf 'Synced to refs: %s\n' "$b"
             fi
         fi
@@ -744,7 +744,7 @@ cmd_prune() {
         case "$arg" in
             --force|-f) force=1 ;;
             --dry-run)  dry_run=1 ;;
-            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
@@ -764,7 +764,7 @@ cmd_prune() {
             continue
         fi
         branches+=("$branch")
-    done < <(_bx_read_all)
+    done < <(_arx_read_all)
 
     if [[ ${#branches[@]} -eq 0 && ${#skipped[@]} -eq 0 ]]; then
         printf 'No archived branches found in local branches.\n'
@@ -800,7 +800,7 @@ cmd_prune() {
 
     if [[ $force -eq 0 ]]; then
         printf 'WARNING: This is a dangerous operation. Deleted branches cannot be\n'
-        printf 'recovered from git — only from the git-bx archive.\n'
+        printf 'recovered from git — only from the git-arx archive.\n'
         printf 'Type "yes" to continue: '
         local answer
         read -r answer || true
@@ -819,43 +819,43 @@ cmd_prune() {
 }
 
 cmd_push() {
-    _bx_require_storage refs
+    _arx_require_storage refs
     local dry_run=""
     for arg in "$@"; do
         case "$arg" in
             --dry-run) dry_run="--dry-run" ;;
-            *) printf 'git-bx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
-    git push $dry_run origin 'refs/bx/*:refs/bx/*'
+    git push $dry_run origin 'refs/arx/*:refs/arx/*'
     [[ -n "$dry_run" ]] && printf '(dry run — no changes written)\n' || true
 }
 
 cmd_pull() {
-    _bx_require_storage refs
-    git fetch origin 'refs/bx/*:refs/bx/*'
+    _arx_require_storage refs
+    git fetch origin 'refs/arx/*:refs/arx/*'
 
     # If file backend is also enabled, sync fetched refs into .gitarchive
     local use_file
-    use_file=$(_bx_config_storefile)
+    use_file=$(_arx_config_storefile)
     if [[ "$use_file" == "true" ]]; then
         local branch sha date
         while IFS=' ' read -r branch sha date rest; do
-            _bx_file_write "$branch" "$sha" "$date"
-        done < <(_bx_refs_read)
+            _arx_file_write "$branch" "$sha" "$date"
+        done < <(_arx_refs_read)
         printf 'Synced fetched refs to .gitarchive\n'
     fi
 }
 
 cmd_help() {
     cat <<'EOF'
-git-bx — Branch arXiver
+git-arx — Branch Archive Tool for Git
 
 Archive local git branches that have no remote tracking branch, preserving
 the branch name and HEAD SHA for later inspection or restoration.
 
 USAGE
-  git bx <command> [options]
+  git arx <command> [options]
 
 COMMANDS
   add <branch> [archive-name] [--force]  Archive a single branch
@@ -880,32 +880,32 @@ COMMANDS
 
 STORAGE BACKENDS
   Configured via two independent flags:
-    git config bx.storerefs true|false   (default: true)
-    git config bx.storefile true|false   (default: false)
+    git config arx.storerefs true|false   (default: true)
+    git config arx.storefile true|false   (default: false)
 
-  refs   Git refs under refs/bx/<branch>. Protects commits from gc.
+  refs   Git refs under refs/arx/<branch>. Protects commits from gc.
          Enabled by default — archived commits remain reachable,
          preventing data loss if git gc runs after branch deletion.
-         Never pushed to remote unless you run: git bx push
+         Never pushed to remote unless you run: git arx push
   file   Plain text .gitarchive file. Portable and committable.
          Enable for human-readable archives or team sharing via the repo.
          Commits may be lost after git gc if refs is also disabled.
 
 OTHER CONFIG
-  bx.file   Path to archive file (default: .gitarchive)
+  arx.file   Path to archive file (default: .gitarchive)
 
 EXAMPLES
-  git bx add feature/my-feature
-  git bx add feature/my-feature --force
-  git bx add feature/my-feature feature/my-feature-old
-  git bx rename feature/my-feature feature/my-feature-v1
-  git bx update
-  git bx update --force
-  git bx list --sort=date --order=desc
-  git bx log feature/my-feature --oneline -10
-  git bx checkout feature/my-feature
-  git bx sync --dry-run
-  git bx push
+  git arx add feature/my-feature
+  git arx add feature/my-feature --force
+  git arx add feature/my-feature feature/my-feature-old
+  git arx rename feature/my-feature feature/my-feature-v1
+  git arx update
+  git arx update --force
+  git arx list --sort=date --order=desc
+  git arx log feature/my-feature --oneline -10
+  git arx checkout feature/my-feature
+  git arx sync --dry-run
+  git arx push
 
 EOF
 }
@@ -913,8 +913,8 @@ EOF
 # --- ENTRY POINT -------------------------------------------------------------
 
 main() {
-    _bx_require_git
-    BX_GIT_ROOT=$(_bx_git_root)
+    _arx_require_git
+    ARX_GIT_ROOT=$(_arx_git_root)
 
     local cmd="${1:-}"
     shift || true
@@ -936,8 +936,8 @@ main() {
         help|--help|-h) cmd_help ;;
         "")       cmd_help; exit 1 ;;
         *)
-            printf 'git-bx: unknown command "%s"\n' "$cmd" >&2
-            printf 'Run "git bx help" for usage.\n' >&2
+            printf 'git-arx: unknown command "%s"\n' "$cmd" >&2
+            printf 'Run "git arx help" for usage.\n' >&2
             exit 1
             ;;
     esac
