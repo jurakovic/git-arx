@@ -246,7 +246,7 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 `arx status` accepts `--sort=name|date` and `--order=asc|desc` (defaults: `name`, `asc`). Rows are collected first, then sorted as a post-processing step before printing.
 
-**`printf` byte-vs-character width.** `printf %-Ns` pads a field to N *bytes*, not N display columns. Author names containing multibyte UTF-8 characters (e.g. `ć`, `ž`) are shorter in bytes than in characters, so the STATUS column shifts right for those rows. `arx status` corrects for this before printing each row: it measures the author string in both character count (`${#a}` with the active locale) and byte count (`${#a}` with `LC_ALL=C`), then widens the format field by the difference.
+**`printf` byte-vs-character width.** `printf %-Ns` pads a field to N *bytes*, not N display columns. Author names containing multibyte UTF-8 characters (e.g. `ć`, `ž`) are longer in bytes than in characters, so the STATUS column shifts left for those rows. `arx status` corrects for this before printing each row: it measures the author string in both character count (`${#a}` with the active locale) and byte count (`${#a}` with `LC_ALL=C`), then widens the format field by the difference.
 
 ### Performance (`arx update`, `arx status`, `arx list --author`)
 
