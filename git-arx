@@ -463,10 +463,13 @@ cmd_status() {
 
     printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
     printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
-    local b s d a st
+    local b s d a st aw saved_lc ac bc
     # shellcheck disable=SC2086
     while IFS=$'\t' read -r b s d a st; do
-        printf '%-40s %-9s %-12s %-20s %s\n' "$b" "$s" "$d" "$a" "$st"
+        # %-20s pads by bytes; correct for multibyte chars in author names.
+        ac=${#a}; saved_lc="${LC_ALL:-}"; LC_ALL=C; bc=${#a}; LC_ALL="$saved_lc"
+        aw=$(( 20 + bc - ac ))
+        printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$st"
     done < <(printf '%s\n' "${rows[@]}" | sort $sort_flag -t$'\t' -k"${sort_field}")
 }
 
