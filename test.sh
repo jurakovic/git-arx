@@ -224,6 +224,8 @@ test_list() {
     assert_ok    "list: --storage=file"            "$ARX" list --storage=file
     assert_fails "list: --storage=refs (file-only)" "$ARX" list --storage=refs
     assert_out   "list: --storage=bogus: error"   "invalid --storage value" "$ARX" list --storage=bogus
+    assert_out   "list: --storage=both: error"    "invalid --storage value" "$ARX" list --storage=both
+    assert_fails "list: --storage=both: nonzero"                            "$ARX" list --storage=both
     assert_fails "list: unknown option: nonzero"  "$ARX" list --bogus
 }
 

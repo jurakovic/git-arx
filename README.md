@@ -229,7 +229,7 @@ git arx list
 | `--sort=date` | Sort by commit date (default) |
 | `--order=asc` | Ascending order |
 | `--order=desc` | Descending order (default) |
-| `--storage=file\|refs\|both` | Show only branches from the given backend (default: configured storage) |
+| `--storage=file\|refs` | Show only branches from the given backend (default: all configured backends) |
 | `--author` | Add an AUTHOR column showing the last committer on each branch |
 
 ```bash

@@ -465,10 +465,10 @@ cmd_list() {
             --order=asc)  order="asc" ;;
             --order=desc) order="desc" ;;
             --author)     show_author=1 ;;
-            --storage=both|--storage=file|--storage=refs)
+            --storage=file|--storage=refs)
                 list_storage="${arg#--storage=}" ;;
             --storage=*)
-                printf 'git-arx: invalid --storage value "%s" (use: file, refs, both)\n' "${arg#--storage=}" >&2
+                printf 'git-arx: invalid --storage value "%s" (use: file, refs)\n' "${arg#--storage=}" >&2
                 exit 1 ;;
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
@@ -865,7 +865,7 @@ COMMANDS
   update [--force] [--dry-run]    Archive all local branches with no upstream
   list [--sort=name|date]       List archived branches
        [--order=asc|desc]
-       [--storage=file|refs|both]
+       [--storage=file|refs]
        [--author]
   log <branch> [git-log-flags]  Show commits (delegates to git log)
   checkout <branch>             Restore a branch from the archive
