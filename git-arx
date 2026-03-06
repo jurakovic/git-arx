@@ -874,25 +874,25 @@ USAGE
 
 COMMANDS
   add <branch> [archive-name] [--force]  Archive a single branch
-  remove <branch>                 Remove a branch from the archive
-  rename <old> <new>              Rename an archived branch
-  status [--sort=name|date]       Show branches that would be archived by update
+  remove <branch>                        Remove a branch from the archive
+  rename <old> <new>                     Rename an archived branch
+  status [--sort=name|date]              Show branches that would be archived by update
          [--order=asc|desc]
-  update [--force] [--dry-run]    Archive all local branches with no upstream
-  list [--sort=name|date]       List archived branches
+  update [--force] [--dry-run]           Archive all local branches with no upstream
+  list [--sort=name|date]                List archived branches
        [--order=asc|desc]
        [--storage=file|refs]
        [--author]
-  log <branch> [git-log-flags]  Show commits (delegates to git log)
-  checkout <branch>             Restore a branch from the archive
-  prune [--force] [--dry-run]   Delete local branches that are archived
-  merge <f1> <f2> -o <out>      Merge two .gitarchive files     [file only]
-  push [--dry-run]              Push archived refs to remote     [refs only]
-  pull                          Pull archived refs from remote   [refs only]
-  sync [--dry-run]              Reconcile file and refs backends [both only]
+  log <branch> [git-log-flags]           Show commits (delegates to git log)
+  checkout <branch>                      Restore a branch from the archive
+  prune [--force] [--dry-run]            Delete local branches that are archived
+  merge <f1> <f2> -o <out>               Merge two .gitarchive files       [file only]
+  push [--dry-run]                       Push archived refs to remote      [refs only]
+  pull                                   Pull archived refs from remote    [refs only]
+  sync [--dry-run]                       Reconcile file and refs backends  [file+refs]
        [--force-file]
        [--force-refs]
-  help                          Show this help
+  help                                   Show this help
 
 STORAGE BACKENDS
   Configured via two independent flags:
