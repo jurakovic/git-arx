@@ -8,7 +8,7 @@ For end-user documentation, see [README.md](README.md).
 
 ## Overview
 
-`git-arx` is a single self-contained bash script (~950 lines). There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
+`git-arx` is a single self-contained bash script (~965 lines). There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
 
 ```
 # --- CONFIG HELPERS ---
@@ -243,6 +243,10 @@ This approach is more robust than checking `%(upstream:track)` for the string `[
 Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches. Using `%(upstream)` (the full ref) and checking whether that ref resolves correctly handles both the "never had a remote" and "remote was deleted" cases.
 
 `arx update` writes the archive for each candidate. `arx status` runs the same detection and determines each branch's archive state (`Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`). Nothing is written.
+
+`arx status` accepts `--sort=name|date` and `--order=asc|desc` (defaults: `name`, `asc`). Rows are collected first, then sorted as a post-processing step before printing.
+
+**`printf` byte-vs-character width.** `printf %-Ns` pads a field to N *bytes*, not N display columns. Author names containing multibyte UTF-8 characters (e.g. `ć`, `ž`) are shorter in bytes than in characters, so the STATUS column shifts right for those rows. `arx status` corrects for this before printing each row: it measures the author string in both character count (`${#a}` with the active locale) and byte count (`${#a}` with `LC_ALL=C`), then widens the format field by the difference.
 
 ### Performance (`arx update`, `arx status`, `arx list --author`)
 
