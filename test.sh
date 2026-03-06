@@ -330,7 +330,12 @@ test_update() {
         fail "status: shows Archived for already-archived branch"
         printf '      got: %s\n' "$status_after"
     fi
-    assert_out "status: shows author (2nd call)" "Test" "$ARX" status
+    assert_out   "status: shows author (2nd call)"    "Test" "$ARX" status
+    assert_ok    "status: --sort=name"               "$ARX" status --sort=name
+    assert_ok    "status: --sort=date"               "$ARX" status --sort=date
+    assert_ok    "status: --order=asc"               "$ARX" status --order=asc
+    assert_ok    "status: --order=desc"              "$ARX" status --order=desc
+    assert_fails "status: unknown option: nonzero"   "$ARX" status --bogus
     if printf '%s' "$out" | grep -qF "Archived 3 branch(es)"; then
         pass "update: reports correct count"
     else

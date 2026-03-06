@@ -128,6 +128,19 @@ The **STATUS** column reflects the current state of each branch in the archive:
 
 Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git arx update` to write the archive.
 
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--sort=name` | Sort alphabetically by branch name (default) |
+| `--sort=date` | Sort by commit date |
+| `--order=asc` | Ascending order (default) |
+| `--order=desc` | Descending order |
+
+```bash
+git arx status --sort=date --order=desc
+```
+
 ---
 
 ### `git arx update`

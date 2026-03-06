@@ -401,6 +401,17 @@ cmd_update() {
 }
 
 cmd_status() {
+    local sort_by="name" order="asc"
+    for arg in "$@"; do
+        case "$arg" in
+            --sort=name)  sort_by="name" ;;
+            --sort=date)  sort_by="date" ;;
+            --order=asc)  order="asc" ;;
+            --order=desc) order="desc" ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+        esac
+    done
+
     # Load entire archive once into associative arrays for O(1) lookup,
     # avoiding repeated _arx_read_all calls inside the branch loop.
     declare -A arc_by_name arc_by_sha
@@ -446,13 +457,17 @@ cmd_status() {
         return 0
     fi
 
+    local sort_field sort_flag
+    [[ "$sort_by" == "name" ]] && sort_field=1 || sort_field=3
+    [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
+
     printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
     printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
     local b s d a st
-    for row in "${rows[@]}"; do
-        IFS=$'\t' read -r b s d a st <<< "$row"
+    # shellcheck disable=SC2086
+    while IFS=$'\t' read -r b s d a st; do
         printf '%-40s %-9s %-12s %-20s %s\n' "$b" "$s" "$d" "$a" "$st"
-    done
+    done < <(printf '%s\n' "${rows[@]}" | sort $sort_flag -t$'\t' -k"${sort_field}")
 }
 
 cmd_list() {
@@ -861,7 +876,8 @@ COMMANDS
   add <branch> [archive-name] [--force]  Archive a single branch
   remove <branch>                 Remove a branch from the archive
   rename <old> <new>              Rename an archived branch
-  status                          Show branches that would be archived by update
+  status [--sort=name|date]       Show branches that would be archived by update
+         [--order=asc|desc]
   update [--force] [--dry-run]    Archive all local branches with no upstream
   list [--sort=name|date]       List archived branches
        [--order=asc|desc]
