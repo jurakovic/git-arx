@@ -497,7 +497,7 @@ git log refs/arx/feature/my-feature --oneline
 
 ### File backend — `.gitarchive` (disabled by default)
 
-A plain text file at the repository root (or wherever `arx.file` points). One entry per line:
+A plain text file at the repository root (or wherever `arx.filepath` points). One entry per line:
 
 ```
 # git-arx archive — do not edit manually
@@ -550,13 +550,13 @@ git config arx.storefile true   # enable for human-readable archives or team sha
 git config arx.storefile false  # default
 ```
 
-### `arx.file`
+### `arx.filepath`
 
 Path to the archive file, relative to the repository root. Default: `.gitarchive`.
 
 ```bash
-git config arx.file .git/arx-archive   # keep it out of the working tree
-git config arx.file my-archive.txt
+git config arx.filepath .git/arx-archive   # keep it out of the working tree
+git config arx.filepath my-archive.txt
 ```
 
 ---

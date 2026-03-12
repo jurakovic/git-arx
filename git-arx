@@ -30,7 +30,7 @@ _arx_config_storefile() {
 
 _arx_config_file() {
     local filename
-    filename=$(git config --get arx.file 2>/dev/null || printf '.gitarchive')
+    filename=$(git config --get arx.filepath 2>/dev/null || printf '.gitarchive')
     # Resolve relative to repo root, not $PWD
     printf '%s/%s' "$ARX_GIT_ROOT" "$filename"
 }
@@ -911,7 +911,7 @@ STORAGE BACKENDS
          Commits may be lost after git gc if refs is also disabled.
 
 OTHER CONFIG
-  arx.file   Path to archive file (default: .gitarchive)
+  arx.filepath   Path to archive file (default: .gitarchive)
 
 EXAMPLES
   git arx add feature/my-feature
