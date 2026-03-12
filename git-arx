@@ -329,8 +329,8 @@ cmd_update() {
     local dry_run=0 force=0
     for arg in "$@"; do
         case "$arg" in
-            --dry-run)  dry_run=1 ;;
-            --force|-f) force=1 ;;
+            --dry-run|-n) dry_run=1 ;;
+            --force|-f)   force=1 ;;
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
@@ -680,7 +680,7 @@ cmd_sync() {
     local dry_run=0 force=""
     for arg in "$@"; do
         case "$arg" in
-            --dry-run)     dry_run=1 ;;
+            --dry-run|-n)  dry_run=1 ;;
             --force-file)  force="file" ;;
             --force-refs)  force="refs" ;;
             *) printf 'git-arx: unknown sync option "%s"\n' "$arg" >&2; exit 1 ;;
@@ -760,8 +760,8 @@ cmd_prune() {
     local force=0 dry_run=0
     for arg in "$@"; do
         case "$arg" in
-            --force|-f) force=1 ;;
-            --dry-run)  dry_run=1 ;;
+            --force|-f)   force=1 ;;
+            --dry-run|-n) dry_run=1 ;;
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
@@ -841,7 +841,7 @@ cmd_push() {
     local dry_run=""
     for arg in "$@"; do
         case "$arg" in
-            --dry-run) dry_run="--dry-run" ;;
+            --dry-run|-n) dry_run="--dry-run" ;;
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
@@ -881,18 +881,18 @@ COMMANDS
   rename <old> <new>                     Rename an archived branch
   status [--sort=name|date]              Show branches that would be archived by update
          [--order=asc|desc]
-  update [--force] [--dry-run]           Archive all local branches with no upstream
+  update [-f|--force] [-n|--dry-run]     Archive all local branches with no upstream
   list [--sort=name|date]                List archived branches
        [--order=asc|desc]
        [--storage=file|refs]
        [--author]
   log <branch> [git-log-flags]           Show commits (delegates to git log)
   checkout <branch>                      Restore a branch from the archive
-  prune [--force] [--dry-run]            Delete local branches that are archived
+  prune [-f|--force] [-n|--dry-run]      Delete local branches that are archived
   merge <f1> <f2> -o <out>               Merge two .gitarchive files       [file only]
-  push [--dry-run]                       Push archived refs to remote      [refs only]
+  push [-n|--dry-run]                    Push archived refs to remote      [refs only]
   pull                                   Pull archived refs from remote    [refs only]
-  sync [--dry-run]                       Reconcile file and refs backends  [file+refs]
+  sync [-n|--dry-run]                    Reconcile file and refs backends  [file+refs]
        [--force-file]
        [--force-refs]
   help                                   Show this help
