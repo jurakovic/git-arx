@@ -177,7 +177,7 @@ If you do want the branch indexed under its natural name as well (so that `git a
 | Option | Description |
 |---|---|
 | `--force`, `-f` | Overwrite archived entries whose SHA has changed. Outputs `Updated:` instead of `Archived:` for those branches. |
-| `--dry-run` | Show which branches would be archived or conflict without writing anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
+| `--dry-run`, `-n` | Show which branches would be archived or conflict without writing anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
 
 ```bash
 git arx update --dry-run
@@ -213,7 +213,7 @@ If you are currently checked out on an archived branch, it is skipped with a not
 | Option | Description |
 |---|---|
 | `--force`, `-f` | Skip the confirmation prompt and delete immediately. |
-| `--dry-run` | Show which branches would be deleted without deleting anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
+| `--dry-run`, `-n` | Show which branches would be deleted without deleting anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
 
 ```bash
 git arx prune --force
@@ -400,7 +400,7 @@ git arx push
 #  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
 ```
 
-Use `--dry-run` to see what would be pushed without actually pushing:
+Use `--dry-run` (`-n`) to see what would be pushed without actually pushing:
 
 ```bash
 git arx push --dry-run
@@ -442,7 +442,7 @@ git arx sync
 
 | Flag | Description |
 |---|---|
-| `--dry-run` | Show what would change without making any changes. Produces the same output as a real run, followed by `(dry run — no changes written)`. Combine with `--force-file` or `--force-refs` to preview what those would do. |
+| `--dry-run`, `-n` | Show what would change without making any changes. Produces the same output as a real run, followed by `(dry run — no changes written)`. Combine with `--force-file` or `--force-refs` to preview what those would do. |
 | `--force-file` | Treat `.gitarchive` as the source of truth: resolve SHA conflicts using the file's SHA, and delete any refs-only entries from refs (they are absent from the file). |
 | `--force-refs` | Treat refs as the source of truth: resolve SHA conflicts using the ref's SHA, and delete any file-only entries from the file (they are absent from refs). |
 
