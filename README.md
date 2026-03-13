@@ -478,7 +478,7 @@ Run `git arx help` (or `--help`, `-h`) to print the built-in usage summary at an
 
 ### Refs backend — `refs/arx/` (enabled by default)
 
-Git refs stored under `refs/arx/<branch-name>` inside `.git/refs/`. These are standard git refs that git tracks natively.
+Git refs stored under `refs/arx/<branch-name>` inside `.git/refs/` (configurable via `arx.refsprefix`). These are standard git refs that git tracks natively.
 
 ```bash
 # Inspect directly
@@ -534,7 +534,7 @@ All settings are managed via `git config`. They can be set per-repo or globally.
 
 ### `arx.storerefs`
 
-Controls whether the refs backend (`refs/arx/`) is used. Default: `true`.
+Controls whether the refs backend is used. Default: `true`. The refs prefix defaults to `refs/arx/` and can be changed with `arx.refsprefix`.
 
 ```bash
 git config arx.storerefs true   # default — GC-safe local storage
@@ -558,6 +558,17 @@ Path to the archive file, relative to the repository root. Default: `.gitarchive
 git config arx.filepath .git/arx-archive   # keep it out of the working tree
 git config arx.filepath my-archive.txt
 ```
+
+### `arx.refsprefix`
+
+Refs namespace prefix for the refs backend. Default: `refs/arx/`. Must start with `refs/` and end with `/`.
+
+```bash
+git config arx.refsprefix refs/arx/        # default
+git config arx.refsprefix refs/archive/    # custom namespace
+```
+
+Changing this after branches are already archived under the old prefix will orphan the existing refs. Migrate by running `git arx push` before changing, updating the prefix on both ends, then running `git arx pull`.
 
 ---
 

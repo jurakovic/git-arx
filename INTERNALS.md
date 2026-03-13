@@ -190,7 +190,7 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 ### Namespace
 
-Archived branches are stored as git refs under `refs/arx/`. For a branch named `feature/login`, the ref path is `refs/arx/feature/login`.
+Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` via `_arx_config_refsprefix()`.
 
 Git ref names allow forward slashes and use them to create directory structure. `refs/arx/feature/login` is stored as the file `.git/refs/arx/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` — no special handling is needed.
 
@@ -198,7 +198,7 @@ The only characters illegal in git ref names are: space, `~`, `^`, `:`, `?`, `*`
 
 ### Why Refs Protect from gc
 
-`git gc` prunes **unreachable** objects — commits, trees, and blobs that cannot be reached by following refs (branches, tags, stash, reflogs). When a local branch is deleted, its commits become unreachable unless something else references them. A `refs/arx/` ref is a real git ref, so any commit it points to (and all ancestors of that commit) remain reachable and will not be pruned.
+`git gc` prunes **unreachable** objects — commits, trees, and blobs that cannot be reached by following refs (branches, tags, stash, reflogs). When a local branch is deleted, its commits become unreachable unless something else references them. A ref under the arx prefix (e.g., `refs/arx/`) is a real git ref, so any commit it points to (and all ancestors of that commit) remain reachable and will not be pruned.
 
 ### Reading Dates from Refs
 
@@ -206,23 +206,23 @@ The refs backend does not store dates explicitly — the date is read from the c
 
 ```bash
 git for-each-ref \
-    --format='%(refname:short) %(objectname) %(creatordate:iso-strict)' \
-    'refs/arx/'
+    --format='%(refname) %(objectname) %(creatordate:iso-strict)' \
+    "$refsprefix"
 ```
 
-`%(refname:short)` strips the `refs/` prefix, giving `arx/feature/login`. The `arx/` prefix is then stripped in `_arx_refs_read` to recover the branch name.
+`%(refname)` gives the full ref path (e.g., `refs/arx/feature/login`). The configured prefix is then stripped in `_arx_refs_read` to recover the branch name.
 
 `%(creatordate:iso-strict)` gives the ISO-8601 date of the commit the ref points to. This is the same date that would have been stored in the file backend, so the normalized output of both `_arx_file_read` and `_arx_refs_read` is identical in format.
 
 ### Remote Operations
 
-Refs in `refs/arx/` are not pushed by default. Git only pushes `refs/heads/*` and `refs/tags/*` in a standard `git push`. The `push` command uses an explicit refspec:
+Refs under the arx prefix are not pushed by default. Git only pushes `refs/heads/*` and `refs/tags/*` in a standard `git push`. The `push` command uses an explicit refspec built from `arx.refsprefix` (default: `refs/arx/`):
 
 ```bash
 git push origin 'refs/arx/*:refs/arx/*'
 ```
 
-This pushes all `refs/arx/` refs to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `pull` command uses the equivalent fetch refspec.
+This pushes all refs under the prefix to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `pull` command uses the equivalent fetch refspec.
 
 This is also how the `both` backend can achieve fully automatic remote sync without `git arx push/pull`: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
 

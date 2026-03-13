@@ -35,6 +35,10 @@ _arx_config_file() {
     printf '%s/%s' "$ARX_GIT_ROOT" "$filename"
 }
 
+_arx_config_refsprefix() {
+    git config --get arx.refsprefix 2>/dev/null || printf 'refs/arx/'
+}
+
 _arx_require_storage() {
     local required="$1"
     local use_refs use_file
@@ -118,24 +122,29 @@ _arx_file_delete() {
 # --- BACKEND: REFS -----------------------------------------------------------
 
 _arx_refs_read() {
-    # %(refname:short) strips "refs/" giving "arx/feature/login"
+    local refsprefix
+    refsprefix=$(_arx_config_refsprefix)
     git for-each-ref \
-        --format='%(refname:short) %(objectname) %(creatordate:iso-strict)' \
-        'refs/arx/' \
-    | while IFS=' ' read -r refshort sha date rest; do
-        local branch="${refshort#arx/}"
+        --format='%(refname) %(objectname) %(creatordate:iso-strict)' \
+        "$refsprefix" \
+    | while IFS=' ' read -r refname sha date rest; do
+        local branch="${refname#$refsprefix}"
         printf '%s %s %s\n' "$branch" "$sha" "$date"
     done
 }
 
 _arx_refs_write() {
     local branch="$1" sha="$2"
-    git update-ref "refs/arx/${branch}" "$sha"
+    local refsprefix
+    refsprefix=$(_arx_config_refsprefix)
+    git update-ref "${refsprefix}${branch}" "$sha"
 }
 
 _arx_refs_delete() {
     local branch="$1"
-    git update-ref -d "refs/arx/${branch}" 2>/dev/null || true
+    local refsprefix
+    refsprefix=$(_arx_config_refsprefix)
+    git update-ref -d "${refsprefix}${branch}" 2>/dev/null || true
 }
 
 # --- ABSTRACTION LAYER -------------------------------------------------------
@@ -838,20 +847,23 @@ cmd_prune() {
 
 cmd_push() {
     _arx_require_storage refs
-    local dry_run=""
+    local dry_run="" refsprefix
+    refsprefix=$(_arx_config_refsprefix)
     for arg in "$@"; do
         case "$arg" in
             --dry-run|-n) dry_run="--dry-run" ;;
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
-    git push $dry_run origin 'refs/arx/*:refs/arx/*'
+    git push $dry_run origin "${refsprefix}*:${refsprefix}*"
     [[ -n "$dry_run" ]] && printf '(dry run — no changes written)\n' || true
 }
 
 cmd_pull() {
     _arx_require_storage refs
-    git fetch origin 'refs/arx/*:refs/arx/*'
+    local refsprefix
+    refsprefix=$(_arx_config_refsprefix)
+    git fetch origin "${refsprefix}*:${refsprefix}*"
 
     # If file backend is also enabled, sync fetched refs into .gitarchive
     local use_file
@@ -911,7 +923,8 @@ STORAGE BACKENDS
          Commits may be lost after git gc if refs is also disabled.
 
 OTHER CONFIG
-  arx.filepath   Path to archive file (default: .gitarchive)
+  arx.filepath      Path to archive file (default: .gitarchive)
+  arx.refsprefix   Refs namespace prefix (default: refs/arx/)
 
 EXAMPLES
   git arx add feature/my-feature
