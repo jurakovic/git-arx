@@ -1,4 +1,4 @@
-# git-arx – Branch Archive Tool for Git
+# git-arx
 
 A git tool for archiving local branches. Before you delete a branch, run `git-arx` to keep a record of its name and last commit so you can list, inspect, and restore it later.
 
@@ -16,26 +16,35 @@ The usual answer is "just use `git reflog`" – but reflog is per-machine, expir
 - **Teams on shared repos** where you don't always know whose branch is whose. `git arx status` shows the committer, so you can skip archiving a colleague's branch that somehow ended up on your machine.
 - **Anyone doing periodic repo hygiene.** The whole workflow is three commands: `git arx status` to review, `git arx update` to archive, `git arx prune` to delete. Takes 30 seconds.
 
-**Why not just tag the tip commit?** You could – but then you need to remember to do it before deleting, name it something sensible, and maintain your own tagging convention. `git-arx` does this automatically for all branches at once and keeps a searchable list.
+**Why not just tag the tip commit?** `git tag archive/my-feature my-feature` is the most common advice online, and it works – but it is manual and one branch at a time. You have to remember to do it before each deletion, invent a naming convention, and maintain it yourself. There is no bulk operation, no way to survey which branches are already archived, and no clean restoration command. Tags also live in the same namespace as release tags, so they show up in `git tag -l` and anywhere else tags are listed. `git-arx` automates the discovery and archiving for all stale branches at once and keeps the archive separate from your release history.
+
+**Why not rename branches with a prefix?** `git branch -m old-feature archive/old-feature` keeps the branch visible with a prefix, which does not solve the original problem – the branch still appears in `git branch` output, just with a different name.
 
 **Why not GitHub/GitLab's "restore branch" button?** That only works if the branch was ever pushed. Local-only work – experiments, WIP commits, half-baked ideas – never touches the remote. Those are exactly the branches most worth archiving.
 
 ---
 
-## Compatibility
+## Quick Start
 
-Requires **bash 4+**. Works anywhere that is present.
+```bash
+# Preview archive status of local branches
+git arx status
 
-| Environment | Status | Notes |
-|---|---|---|
-| Linux | Supported | bash 4+ is standard |
-| macOS – Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
-| macOS – system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
-| Windows – Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
-| Windows – WSL | Supported | Linux environment |
-| PowerShell / CMD | **Not supported** | No bash runtime |
+# Archive all local branches that have no remote tracking branch
+git arx update
 
-The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error – install bash via Homebrew and confirm `which bash` points to it.
+# Delete the branches you just archived
+git arx prune
+
+# See what's archived
+git arx list
+
+# Inspect commits on an archived branch
+git arx log feature/my-feature --oneline
+
+# Restore a branch
+git arx checkout feature/my-feature
+```
 
 ---
 
@@ -78,27 +87,20 @@ git config --global alias.arx '!git-arx'
 
 ---
 
-## Quick Start
+## Compatibility
 
-```bash
-# Preview archive status of local branches
-git arx status
+Requires **bash 4+**. Works anywhere that is present.
 
-# Archive all local branches that have no remote tracking branch
-git arx update
+| Environment | Status | Notes |
+|---|---|---|
+| Linux | Supported | bash 4+ is standard |
+| macOS – Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
+| macOS – system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
+| Windows – Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
+| Windows – WSL | Supported | Linux environment |
+| PowerShell / CMD | **Not supported** | No bash runtime |
 
-# Delete the branches you just archived
-git arx prune
-
-# See what's archived
-git arx list
-
-# Inspect commits on an archived branch
-git arx log feature/my-feature --oneline
-
-# Restore a branch
-git arx checkout feature/my-feature
-```
+The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error – install bash via Homebrew and confirm `which bash` points to it.
 
 ---
 
