@@ -647,12 +647,6 @@ git config arx.storerefs false
 
 ---
 
-## Notes
-
-- Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
-
----
-
 ## Internals
 
 Implementation details, design decisions, and architectural notes are in [INTERNALS.md](INTERNALS.md).
