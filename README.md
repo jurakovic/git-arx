@@ -176,7 +176,7 @@ If you do want the branch indexed under its natural name as well (so that `git a
 
 | Option | Description |
 |---|---|
-| `--force`, `-f` | Overwrite archived entries whose SHA has changed. Outputs `Updated:` instead of `Archived:` for those branches. |
+| `--force`, `-f` | Overwrite archived entries whose SHA has changed. Outputs `Updated:` instead of `Archived:` for those branches. Branches that are "already safe" (current SHA archived under a different name) are still skipped; use `git arx add <branch>` to index them under their own name. |
 | `--dry-run`, `-n` | Show which branches would be archived or conflict without writing anything. Produces the same output as a real run, followed by `(dry run – no changes written)`. |
 
 ```bash
@@ -329,9 +329,11 @@ Archived: feature/my-feature at a1b2c3d4
 ```bash
 # Overwrite the existing archive entry
 git arx add feature/my-feature --force
+# Archived: feature/my-feature at deadbeef
 
 # Store under a different name to avoid conflict
 git arx add feature/my-feature feature/my-feature-old
+# Archived: feature/my-feature (as feature/my-feature-old) at deadbeef
 ```
 
 `git arx add` never creates duplicate entries – the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.

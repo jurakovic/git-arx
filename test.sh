@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# test.sh — Integration test suite for git-arx
+# test.sh – Integration test suite for git-arx
 # Runs ./git-arx directly; no install required.
 # Usage: bash test.sh
 
@@ -370,7 +370,7 @@ test_update() {
         fail "update --dry-run: should show archived message"
         printf '      got: %s\n' "$out"
     fi
-    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+    if printf '%s' "$out" | grep -qF "(dry run – no changes written)"; then
         pass "update --dry-run: appends dry-run line"
     else
         fail "update --dry-run: should append dry-run line"
@@ -589,7 +589,7 @@ test_prune() {
     "$ARX" add feature/alpha > /dev/null
     "$ARX" add feature/beta  > /dev/null
     out=$("$ARX" prune --dry-run 2>&1)
-    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+    if printf '%s' "$out" | grep -qF "(dry run – no changes written)"; then
         pass "prune --dry-run: appends dry-run line"
     else
         fail "prune --dry-run: should append dry-run line"
@@ -735,7 +735,7 @@ test_push_pull() {
         fail "push: ref should be on remote"
     fi
 
-    # Fresh clone — test pull
+    # Fresh clone – test pull
     local repo2="$TMPROOT/repo2"
     git clone "$REMOTE" "$repo2" -q
     cd "$repo2"
@@ -780,7 +780,7 @@ test_sync() {
         fail "sync --dry-run: should report file-only"
         printf '      got: %s\n' "$out"
     fi
-    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+    if printf '%s' "$out" | grep -qF "(dry run – no changes written)"; then
         pass "sync --dry-run: appends dry-run line"
     else
         fail "sync --dry-run: should append dry-run line"
@@ -866,7 +866,7 @@ test_sync() {
         fail "sync --dry-run --force-file: should show resolved message"
         printf '      got: %s\n' "$out"
     fi
-    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+    if printf '%s' "$out" | grep -qF "(dry run – no changes written)"; then
         pass "sync --dry-run --force-file: appends dry-run line"
     else
         fail "sync --dry-run --force-file: should append dry-run line"
@@ -893,7 +893,7 @@ test_sync() {
         fail "sync --dry-run --force-refs: should show resolved message"
         printf '      got: %s\n' "$out"
     fi
-    if printf '%s' "$out" | grep -qF "(dry run — no changes written)"; then
+    if printf '%s' "$out" | grep -qF "(dry run – no changes written)"; then
         pass "sync --dry-run --force-refs: appends dry-run line"
     else
         fail "sync --dry-run --force-refs: should append dry-run line"
@@ -941,7 +941,7 @@ test_double_add() {
     reset_archive
 
     "$ARX" add feature/alpha > /dev/null
-    "$ARX" add feature/alpha > /dev/null  # second add — should update, not duplicate
+    "$ARX" add feature/alpha > /dev/null  # second add – should update, not duplicate
 
     local count
     count=$(grep -c "^feature/alpha " .gitarchive 2>/dev/null || true)

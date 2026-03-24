@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # =============================================================================
-# git-arx — Branch Archive Tool for Git
+# git-arx – Branch Archive Tool for Git
 # Archive local git branches that have no remote tracking branch.
 # Usage: git arx <command> [options]
 # =============================================================================
@@ -93,7 +93,7 @@ _arx_file_write() {
             fi
         done < "$archive"
     else
-        printf '# git-arx archive — do not edit manually\n' > "$tmpfile"
+        printf '# git-arx archive – do not edit manually\n' > "$tmpfile"
     fi
 
     printf '%s %s %s\n' "$branch" "$sha" "$date" >> "$tmpfile"
@@ -345,7 +345,7 @@ cmd_update() {
     done
 
     # Load archive once into associative arrays for O(1) lookup.
-    # %(upstream) last — see INTERNALS for the IFS tab-collapsing explanation.
+    # %(upstream) last – see INTERNALS for the IFS tab-collapsing explanation.
     declare -A arc_by_name arc_by_sha
     while IFS=' ' read -r b sha date rest; do
         arc_by_name["$b"]="$sha"
@@ -368,10 +368,10 @@ cmd_update() {
             if [[ $force -eq 0 ]]; then
                 existing_as="${arc_by_sha[$sha]:-}"
                 if [[ -n "$existing_as" ]]; then
-                    printf 'Already safe: %s (%s archived as "%s") — skipped\n' "$branch" "${sha:0:8}" "$existing_as"
+                    printf 'Already safe: %s (%s archived as "%s") – skipped\n' "$branch" "${sha:0:8}" "$existing_as"
                     already_safe=$(( already_safe + 1 ))
                 else
-                    printf 'Conflict: %s (archived: %s, current: %s) — skipped\n' \
+                    printf 'Conflict: %s (archived: %s, current: %s) – skipped\n' \
                         "$branch" "${existing_sha:0:8}" "${sha:0:8}"
                     conflicts=$(( conflicts + 1 ))
                 fi
@@ -387,7 +387,7 @@ cmd_update() {
 
         existing_as="${arc_by_sha[$sha]:-}"
         if [[ -n "$existing_as" ]]; then
-            printf 'Already safe: %s (%s archived as "%s") — skipped\n' "$branch" "${sha:0:8}" "$existing_as"
+            printf 'Already safe: %s (%s archived as "%s") – skipped\n' "$branch" "${sha:0:8}" "$existing_as"
             already_safe=$(( already_safe + 1 ))
             continue
         fi
@@ -405,7 +405,7 @@ cmd_update() {
     [[ $already_safe -gt 0 ]] && printf ', %d already safe (SHA archived under different name)' "$already_safe" || true
     [[ $conflicts -gt 0 ]] && printf ', %d conflict(s) skipped' "$conflicts" || true
     printf '.\n'
-    [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true
+    [[ $dry_run -eq 1 ]] && printf '(dry run – no changes written)\n' || true
     [[ $conflicts -gt 0 ]] && exit 1 || true
 }
 
@@ -431,9 +431,9 @@ cmd_status() {
 
     local -a rows=()
     # Single for-each-ref call fetches SHA, date, author, and upstream for
-    # all branches at once — replaces per-branch git rev-parse + git log calls.
+    # all branches at once – replaces per-branch git rev-parse + git log calls.
     # NOTE: %(upstream) must be LAST. Tab is IFS whitespace, so consecutive
-    # tabs collapse — a mid-format empty %(upstream) would shift all following
+    # tabs collapse – a mid-format empty %(upstream) would shift all following
     # fields left. Placing it last lets bash strip the trailing tab cleanly.
     while IFS=$'\t' read -r branch sha date author upstream_ref; do
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
@@ -649,7 +649,7 @@ cmd_merge() {
 
     local merged=0 conflicts=0
     local tmpfile="${output}.tmp.$$"
-    printf '# git-arx archive — merged from %s and %s\n' "$file1" "$file2" > "$tmpfile"
+    printf '# git-arx archive – merged from %s and %s\n' "$file1" "$file2" > "$tmpfile"
 
     # Collect all branch names
     declare -A all_branches
@@ -664,7 +664,7 @@ cmd_merge() {
                 printf '%s %s\n' "$b" "$v1" >> "$tmpfile"
                 merged=$(( merged + 1 ))
             else
-                printf 'CONFLICT: %s has different SHAs (%s vs %s) — skipped\n' "$b" "${s1:0:8}" "${s2:0:8}" >&2
+                printf 'CONFLICT: %s has different SHAs (%s vs %s) – skipped\n' "$b" "${s1:0:8}" "${s2:0:8}" >&2
                 conflicts=$(( conflicts + 1 ))
             fi
         elif [[ -n "$v1" ]]; then
@@ -732,7 +732,7 @@ cmd_sync() {
                         printf 'Resolved (force-refs): %s -> file=%s\n' "$b" "${rsha:0:8}"
                     fi
                 else
-                    printf 'CONFLICT: %s — refs=%s file=%s. Use --force-refs or --force-file.\n' \
+                    printf 'CONFLICT: %s – refs=%s file=%s. Use --force-refs or --force-file.\n' \
                         "$b" "${rs:0:8}" "${fs:0:8}" >&2
                     had_conflict=1
                 fi
@@ -740,7 +740,7 @@ cmd_sync() {
         elif [[ -n "$rv" ]]; then
             local rsha="${rv%% *}" rdate="${rv#* }"
             if [[ "$force" == "file" ]]; then
-                # File is authoritative — entry absent from file means remove it from refs
+                # File is authoritative – entry absent from file means remove it from refs
                 [[ $dry_run -eq 0 ]] && _arx_refs_delete "$b"
                 printf 'Removed from refs (force-file): %s\n' "$b"
             else
@@ -750,7 +750,7 @@ cmd_sync() {
         else
             local fsha="${fv%% *}" fdate="${fv#* }"
             if [[ "$force" == "refs" ]]; then
-                # Refs is authoritative — entry absent from refs means remove it from file
+                # Refs is authoritative – entry absent from refs means remove it from file
                 [[ $dry_run -eq 0 ]] && _arx_file_delete "$b"
                 printf 'Removed from file (force-refs): %s\n' "$b"
             else
@@ -762,7 +762,7 @@ cmd_sync() {
 
     [[ $had_conflict -eq 1 ]] && exit 1
     printf 'Sync complete.\n'
-    [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true
+    [[ $dry_run -eq 1 ]] && printf '(dry run – no changes written)\n' || true
 }
 
 cmd_prune() {
@@ -821,13 +821,13 @@ cmd_prune() {
 
     if [[ $dry_run -eq 1 ]]; then
         printf 'Done. Deleted %d branch(es).\n' "${#branches[@]}"
-        printf '(dry run — no changes written)\n'
+        printf '(dry run – no changes written)\n'
         return 0
     fi
 
     if [[ $force -eq 0 ]]; then
         printf 'WARNING: This is a dangerous operation. Deleted branches cannot be\n'
-        printf 'recovered from git — only from the git-arx archive.\n'
+        printf 'recovered from git – only from the git-arx archive.\n'
         printf 'Type "yes" to continue: '
         local answer
         read -r answer || true
@@ -856,7 +856,7 @@ cmd_push() {
         esac
     done
     git push $dry_run origin "${refsprefix}*:${refsprefix}*"
-    [[ -n "$dry_run" ]] && printf '(dry run — no changes written)\n' || true
+    [[ -n "$dry_run" ]] && printf '(dry run – no changes written)\n' || true
 }
 
 cmd_pull() {
@@ -879,7 +879,7 @@ cmd_pull() {
 
 cmd_help() {
     cat <<'EOF'
-git-arx — Branch Archive Tool for Git
+git-arx – Branch Archive Tool for Git
 
 Archive local git branches that have no remote tracking branch, preserving
 the branch name and HEAD SHA for later inspection or restoration.
@@ -915,7 +915,7 @@ STORAGE BACKENDS
     git config arx.storefile true|false   (default: false)
 
   refs   Git refs under refs/arx/<branch>. Protects commits from gc.
-         Enabled by default — archived commits remain reachable,
+         Enabled by default – archived commits remain reachable,
          preventing data loss if git gc runs after branch deletion.
          Never pushed to remote unless you run: git arx push
   file   Plain text .gitarchive file. Portable and committable.

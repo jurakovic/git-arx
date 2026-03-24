@@ -269,7 +269,7 @@ git for-each-ref \
     refs/heads/
 ```
 
-`arx update` also keeps the in-memory maps current after each write – `arc_by_name` and `arc_by_sha` are updated immediately after `_arx_write` – so that subsequent branches processed in the same run see the correct archive state.
+`arx update` also keeps the in-memory maps current after processing each branch – `arc_by_name` and `arc_by_sha` are updated regardless of `--dry-run` – so the simulation is accurate, and subsequent branches see the correct in-memory state whether or not writes are actually happening.
 
 **`%(upstream)` must be last.** Tab (`%09`) is an IFS whitespace character. When `%(upstream)` is empty, it produces two consecutive tabs. Because IFS whitespace collapses, `read` treats `<TAB><TAB>` as a single separator – the empty field disappears and all subsequent fields shift left. Placing `%(upstream)` last avoids this: the trailing tab is stripped cleanly, and `upstream_ref` is assigned an empty string, which is the correct behaviour.
 
@@ -345,7 +345,7 @@ In normal usage, drift should not occur – every write operation hits both back
 1. Someone manually edits `.gitarchive` with a text editor
 2. Someone manually creates/deletes refs with raw git commands
 3. A script crash between the file write and the ref write
-4. `git arx pull` without `both` storage (updates refs but not file)
+4. Running `git fetch origin 'refs/arx/*:refs/arx/*'` directly instead of `git arx pull` (updates refs but not the file)
 
 **Algorithm:**
 
