@@ -41,7 +41,7 @@ LICENSE          MIT License
 - No install dependencies – bash and git are already present everywhere this tool would be used
 - Git aliases with `!` prefix (`git config alias.arx '!git-arx'`) invoke external scripts on `$PATH` natively
 - The logic is simple enough that bash's limitations (no proper data structures, string-heavy) are acceptable
-- A Go binary would be the right choice if distribution to non-developers were a goal; it's not
+- A compiled binary (Go, Rust, etc.) would be the right choice if distribution to non-developers were a goal; it's not
 
 The one meaningful bash requirement is associative arrays (`declare -A`), which need bash 4+. Git for Windows ships bash 4.4+. macOS ships bash 3.2 (due to GPL licensing), but `/usr/bin/env bash` on modern macOS with Homebrew resolves to bash 5.x. This is a known trade-off.
 
@@ -223,7 +223,7 @@ git push origin 'refs/arx/*:refs/arx/*'
 
 This pushes all refs under the prefix to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `pull` command uses the equivalent fetch refspec.
 
-This is also how the `both` backend can achieve fully automatic remote sync without `git arx push/pull`: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
+This is also how fully automatic remote sync is possible without `git arx push/pull` when using both backends: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
 
 ---
 
@@ -362,6 +362,52 @@ Non-conflicting entries are always processed. A conflict does not block other en
 **`--dry-run`:** Runs the same comparison logic and prints the same output as a real sync, but skips all writes. A trailing `(dry run – no changes written)` line is appended. Works with or without `--force-file` / `--force-refs` – output shows exactly what would happen if the flag were run without `--dry-run`.
 
 **`--force-file` / `--force-refs`:** When a SHA conflict is detected and a force flag is present, the designated backend is treated as the source of truth and the other is overwritten. This is an escape hatch for the rare case where the user knows which side is correct.
+
+---
+
+## Testing
+
+The test suite lives in `test.sh` and is an integration test suite – it runs the actual `git-arx` script against real git repositories created in a temporary directory. No mocking.
+
+### Running the tests
+
+```bash
+bash test.sh
+```
+
+No install required. The script resolves the path to `git-arx` relative to its own location, so it works from any working directory.
+
+### Structure
+
+The suite is organized into sections, each exercising one command or scenario:
+
+```
+test_help          git arx help / --help / -h
+test_add           git arx add (normal, conflict, --force, archive-name)
+test_remove        git arx remove
+test_rename        git arx rename
+test_list          git arx list (sorting, --author, --storage filter)
+test_update        git arx update (--dry-run, --force, conflicts, already-safe)
+test_log           git arx log (passthrough flags)
+test_checkout      git arx checkout (restore, gc'd commit)
+test_prune         git arx prune (--dry-run, --force, current branch skipped)
+test_merge         git arx merge (dedup, conflicts)
+test_refs_backend  refs-only storage
+test_both_backend  both backends enabled (union reads, sync)
+test_push_pull     git arx push / pull (requires a bare remote)
+test_sync          git arx sync (--dry-run, --force-file, --force-refs)
+test_slashed_branches  branch names with slashes
+test_double_add    idempotency of add
+test_error_cases   unknown commands, missing args, bad config
+```
+
+Each section uses `assert_ok`, `assert_fails`, and `assert_out` helpers. `assert_out` greps the combined stdout+stderr for a fixed string – tests are intentionally coarse-grained (output substring match) rather than exact, so minor wording changes in messages don't break the suite.
+
+### Test isolation
+
+Each test section resets the archive state via `reset_archive()` before running. This deletes `.gitarchive` and removes all `refs/arx/` refs, then resets storage to `file`-only. Branches deleted during a test are recreated by `recreate_branches()` where needed.
+
+The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via a `trap ... EXIT` at the end of the run.
 
 ---
 

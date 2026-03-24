@@ -1,6 +1,6 @@
 # git-arx – Branch Archive Tool for Git
 
-A git tool for archiving local branches. When you delete a branch, `git-arx` keeps a record of its name and last commit so you can list, inspect, and restore it later.
+A git tool for archiving local branches. Before you delete a branch, run `git-arx` to keep a record of its name and last commit so you can list, inspect, and restore it later.
 
 ---
 
@@ -24,7 +24,7 @@ The usual answer is "just use `git reflog`" – but reflog is per-machine, expir
 
 ## Compatibility
 
-Requires **bash 4+** and **git**. Works anywhere those are present.
+Requires **bash 4+**. Works anywhere that is present.
 
 | Environment | Status | Notes |
 |---|---|---|
@@ -81,7 +81,7 @@ git config --global alias.arx '!git-arx'
 ## Quick Start
 
 ```bash
-# Preview which branches would be archived
+# Preview archive status of local branches
 git arx status
 
 # Archive all local branches that have no remote tracking branch
@@ -333,6 +333,8 @@ git arx add feature/my-feature --force
 # Store under a different name to avoid conflict
 git arx add feature/my-feature feature/my-feature-old
 ```
+
+`git arx add` never creates duplicate entries – the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.
 
 ---
 
@@ -643,7 +645,6 @@ git config arx.storerefs false
 
 ## Notes
 
-- `git arx add` never creates duplicate entries – the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
 
 ---
