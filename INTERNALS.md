@@ -1,4 +1,4 @@
-# git-arx — Internals & Design
+# git-arx – Internals & Design
 
 Implementation details, design decisions, and architectural notes for contributors and maintainers.
 
@@ -8,7 +8,7 @@ For end-user documentation, see [README.md](README.md).
 
 ## Overview
 
-`git-arx` is a single self-contained bash script (~965 lines). There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
+`git-arx` is a single self-contained bash script. There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
 
 ```
 # --- CONFIG HELPERS ---
@@ -19,17 +19,16 @@ For end-user documentation, see [README.md](README.md).
 # --- ENTRY POINT ---
 ```
 
-All commands go through an internal abstraction layer and never touch storage directly. This makes adding a new storage backend a matter of implementing three functions and wiring them into the layer — no commands need to change.
+All commands go through an internal abstraction layer and never touch storage directly. This makes adding a new storage backend a matter of implementing three functions and wiring them into the layer – no commands need to change.
 
 ---
 
 ## File Structure
 
 ```
-git-arx           Single executable bash script — the entire implementation
+git-arx          Single executable bash script – the entire implementation
 install.sh       Installs git-arx to PATH and sets the git alias
 test.sh          Test suite
-.gitattributes   Enforces LF line endings for git-arx and install.sh on Windows checkout
 README.md        End-user documentation
 INTERNALS.md     This file
 LICENSE          MIT License
@@ -39,7 +38,7 @@ LICENSE          MIT License
 
 ## Why a Bash Script
 
-- No install dependencies — bash and git are already present everywhere this tool would be used
+- No install dependencies – bash and git are already present everywhere this tool would be used
 - Git aliases with `!` prefix (`git config alias.arx '!git-arx'`) invoke external scripts on `$PATH` natively
 - The logic is simple enough that bash's limitations (no proper data structures, string-heavy) are acceptable
 - A Go binary would be the right choice if distribution to non-developers were a goal; it's not
@@ -58,24 +57,24 @@ set -euo pipefail
 - `-u`: treat unset variables as errors
 - `-o pipefail`: propagate errors through pipes (e.g. `false | true` fails)
 
-This is important for a tool that writes to storage — silent failures would corrupt the archive or leave it in a partial state.
+This is important for a tool that writes to storage – silent failures would corrupt the archive or leave it in a partial state.
 
 **Caveat:** Commands that are expected to return non-zero must be wrapped. Examples:
-- `git cat-file -e "$sha"` — used for existence checks, returns 1 if the object is missing. Wrapped in `if ! ...`.
-- `git update-ref -d` — used when deleting refs that may not exist. Followed by `|| true`.
-- `(( counter++ ))` — arithmetic `(( expr ))` returns 1 when the expression evaluates to 0. Use `counter=$(( counter + 1 ))` instead.
-- `[[ $dry_run -eq 1 ]] && printf '...\n'` — when `dry_run=0`, `[[ ]]` returns 1, which is the exit code of the whole `&&` expression, triggering `set -e`. Always append `|| true`: `[[ $dry_run -eq 1 ]] && printf '...\n' || true`.
+- `git cat-file -e "$sha"` – used for existence checks, returns 1 if the object is missing. Wrapped in `if ! ...`.
+- `git update-ref -d` – used when deleting refs that may not exist. Followed by `|| true`.
+- `(( counter++ ))` – arithmetic `(( expr ))` returns 1 when the expression evaluates to 0. Use `counter=$(( counter + 1 ))` instead.
+- `[[ $dry_run -eq 1 ]] && printf '...\n'` – when `dry_run=0`, `[[ ]]` returns 1, which is the exit code of the whole `&&` expression, triggering `set -e`. Always append `|| true`: `[[ $dry_run -eq 1 ]] && printf '...\n' || true`.
 
 **Implementing `--dry-run` on a command:**
 
 1. Add a `local dry_run=0` variable and a `--dry-run)  dry_run=1 ;;` case in the option parser.
-2. Keep all output (`printf`) statements identical to the non-dry-run path — the user sees the same output either way.
+2. Keep all output (`printf`) statements identical to the non-dry-run path – the user sees the same output either way.
 3. Guard every write/delete with `[[ $dry_run -eq 0 ]] && ...` or wrap in `if [[ $dry_run -eq 0 ]]; then ... fi`.
 4. Append a single trailing line after the normal summary:
    ```bash
-   [[ $dry_run -eq 1 ]] && printf '(dry run — no changes written)\n' || true
+   [[ $dry_run -eq 1 ]] && printf '(dry run – no changes written)\n' || true
    ```
-   The `|| true` is mandatory — see the caveat above.
+   The `|| true` is mandatory – see the caveat above.
 
 ---
 
@@ -113,7 +112,7 @@ Reads from configured backend(s) and emits normalized records to stdout, one per
 <branch-name> <full-sha> <ISO-8601-date>
 ```
 
-This is a streaming interface — callers pipe or redirect it with `while read`. No temporary files are needed for reads.
+This is a streaming interface – callers pipe or redirect it with `while read`. No temporary files are needed for reads.
 
 When both `arx.storerefs` and `arx.storefile` are enabled, the function performs a union merge:
 1. Emit everything from the refs backend, recording branch names in a `declare -A seen` associative array
@@ -133,9 +132,9 @@ Removes from all enabled backends. When both are enabled, removes from file firs
 
 Several helper functions are defined between the abstraction layer and the commands:
 
-- `_arx_lookup_branch(branch)` — calls `_arx_read_all` and returns `sha date` for the named branch.
-- `_arx_sha_exists(sha)` — checks object existence via `git cat-file -e`; used by `log` and `checkout` before operating on an archived SHA.
-- `_arx_lookup_sha(sha)` — reverse-lookup: scans `_arx_read_all` output for all entries matching the target SHA. Used by `arx add` to detect when a commit is already archived under a different name. `arx update` uses the in-memory `arc_by_sha` map instead (see Performance section).
+- `_arx_lookup_branch(branch)` – calls `_arx_read_all` and returns `sha date` for the named branch.
+- `_arx_sha_exists(sha)` – checks object existence via `git cat-file -e`; used by `log` and `checkout` before operating on an archived SHA.
+- `_arx_lookup_sha(sha)` – reverse-lookup: scans `_arx_read_all` output for all entries matching the target SHA. Used by `arx add` to detect when a commit is already archived under a different name. `arx update` uses the in-memory `arc_by_sha` map instead (see Performance section).
 
 ---
 
@@ -144,7 +143,7 @@ Several helper functions are defined between the abstraction layer and the comma
 ### Format
 
 ```
-# git-arx archive — do not edit manually
+# git-arx archive – do not edit manually
 feature/login a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 2025-11-15T10:30:00+01:00
 fix/bug-42 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 ```
@@ -180,9 +179,9 @@ On Linux/macOS, `mv` over an existing file is atomic at the filesystem level. On
 
 Deleted entries are removed from the file entirely, not marked with a prefix like `#archived`. Rationale:
 
-- The git object itself still exists in the repository (until gc) — the SHA in the record is the real audit trail
+- The git object itself still exists in the repository (until gc) – the SHA in the record is the real audit trail
 - Keeping deleted entries would mean the file grows unboundedly
-- `_arx_file_write` already implements filter-then-append, so delete is just filter-without-append — no new code path
+- `_arx_file_write` already implements filter-then-append, so delete is just filter-without-append – no new code path
 
 ---
 
@@ -192,17 +191,17 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` via `_arx_config_refsprefix()`.
 
-Git ref names allow forward slashes and use them to create directory structure. `refs/arx/feature/login` is stored as the file `.git/refs/arx/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` — no special handling is needed.
+Git ref names allow forward slashes and use them to create directory structure. `refs/arx/feature/login` is stored as the file `.git/refs/arx/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` – no special handling is needed.
 
 The only characters illegal in git ref names are: space, `~`, `^`, `:`, `?`, `*`, `[`, `\`, and the sequences `..` and `@{`. Since git itself rejects branch names with these characters, any valid local branch name is a valid ref name in our namespace.
 
 ### Why Refs Protect from gc
 
-`git gc` prunes **unreachable** objects — commits, trees, and blobs that cannot be reached by following refs (branches, tags, stash, reflogs). When a local branch is deleted, its commits become unreachable unless something else references them. A ref under the arx prefix (e.g., `refs/arx/`) is a real git ref, so any commit it points to (and all ancestors of that commit) remain reachable and will not be pruned.
+`git gc` prunes **unreachable** objects – commits, trees, and blobs that cannot be reached by following refs (branches, tags, stash, reflogs). When a local branch is deleted, its commits become unreachable unless something else references them. A ref under the arx prefix (e.g., `refs/arx/`) is a real git ref, so any commit it points to (and all ancestors of that commit) remain reachable and will not be pruned.
 
 ### Reading Dates from Refs
 
-The refs backend does not store dates explicitly — the date is read from the commit object at query time:
+The refs backend does not store dates explicitly – the date is read from the commit object at query time:
 
 ```bash
 git for-each-ref \
@@ -232,7 +231,7 @@ This is also how the `both` backend can achieve fully automatic remote sync with
 
 ### `arx update` and `arx status`
 
-Both commands use the same upstream-detection logic. Both also use the same performance optimisation — see below.
+Both commands use the same upstream-detection logic. Both also use the same performance optimisation – see below.
 
 `%(upstream)` outputs the full ref path of the configured upstream (e.g. `refs/remotes/origin/main`). If no upstream is configured, the field is empty. A branch is a candidate for archiving if the upstream field is empty (never had a remote) or `git rev-parse --verify "$upstream_ref"` fails (upstream configured but the tracking ref no longer exists locally).
 
@@ -254,9 +253,9 @@ For repos with many branches or archived entries, naive per-branch subprocess ca
 
 **`arx update` and `arx status`** share the same two optimisations:
 
-1. **Archive loaded once** — `_arx_read_all` is called once before the branch loop and its output is stored in two in-memory associative arrays: `arc_by_name[branch]=sha` and `arc_by_sha[sha]=name`. All per-branch archive lookups are then O(1) bash hash table reads instead of O(n) subprocess calls.
+1. **Archive loaded once** – `_arx_read_all` is called once before the branch loop and its output is stored in two in-memory associative arrays: `arc_by_name[branch]=sha` and `arc_by_sha[sha]=name`. All per-branch archive lookups are then O(1) bash hash table reads instead of O(n) subprocess calls.
 
-2. **Single `git for-each-ref` call** — a single call retrieves branch name, SHA, author date, and (for `status`) author name for every branch at once, replacing per-branch `git rev-parse` and `git log` calls:
+2. **Single `git for-each-ref` call** – a single call retrieves branch name, SHA, author date, and (for `status`) author name for every branch at once, replacing per-branch `git rev-parse` and `git log` calls:
 
 ```bash
 # arx status (includes authorname for display)
@@ -270,13 +269,13 @@ git for-each-ref \
     refs/heads/
 ```
 
-`arx update` also keeps the in-memory maps current after each write — `arc_by_name` and `arc_by_sha` are updated immediately after `_arx_write` — so that subsequent branches processed in the same run see the correct archive state.
+`arx update` also keeps the in-memory maps current after each write – `arc_by_name` and `arc_by_sha` are updated immediately after `_arx_write` – so that subsequent branches processed in the same run see the correct archive state.
 
-**`%(upstream)` must be last.** Tab (`%09`) is an IFS whitespace character. When `%(upstream)` is empty, it produces two consecutive tabs. Because IFS whitespace collapses, `read` treats `<TAB><TAB>` as a single separator — the empty field disappears and all subsequent fields shift left. Placing `%(upstream)` last avoids this: the trailing tab is stripped cleanly, and `upstream_ref` is assigned an empty string, which is the correct behaviour.
+**`%(upstream)` must be last.** Tab (`%09`) is an IFS whitespace character. When `%(upstream)` is empty, it produces two consecutive tabs. Because IFS whitespace collapses, `read` treats `<TAB><TAB>` as a single separator – the empty field disappears and all subsequent fields shift left. Placing `%(upstream)` last avoids this: the trailing tab is stripped cleanly, and `upstream_ref` is assigned an empty string, which is the correct behaviour.
 
 **`set -u` and associative arrays.** Accessing a missing key in an associative array with `set -u` enabled triggers an "unbound variable" error in bash 4.x. All array reads use `${arr[key]:-}` to provide an explicit empty-string default and suppress the error.
 
-**`arx list --author`** — archived SHAs are not local branch refs, so `git for-each-ref` does not apply. Instead, all SHAs are collected from the sorted entries and passed to a single `git log --no-walk` call, reducing N subprocess calls to one:
+**`arx list --author`** – archived SHAs are not local branch refs, so `git for-each-ref` does not apply. Instead, all SHAs are collected from the sorted entries and passed to a single `git log --no-walk` call, reducing N subprocess calls to one:
 
 ```bash
 git log --no-walk --format='%H %an' sha1 sha2 sha3 ...
@@ -284,22 +283,22 @@ git log --no-walk --format='%H %an' sha1 sha2 sha3 ...
 
 The result is stored in `author_by_sha[sha]=name` and looked up during rendering. gc'd commits are absent from the output and fall back to `(gc)` via `${author_by_sha[$sha]:-\(gc\)}`.
 
-### `arx add` — Conflict Detection
+### `arx add` – Conflict Detection
 
 Before writing, `add` calls `_arx_lookup_branch` against the target name (which may be a custom archive name). Four outcomes:
 
-1. **Not archived** — write and report `Archived:`.
-2. **Archived with same SHA** — exit 0 with `Already archived:`. Idempotent; safe to call repeatedly.
-3. **Archived with different SHA** — conflict. Exit 1 with an error and hints. `--force` overwrites; an `archive-name` argument stores under a different name instead.
-4. **Not archived by target name, but SHA already present under a different name** — `_arx_lookup_sha` finds the duplicate. Prints a `Note:` line, then writes anyway (the user explicitly requested this archive entry).
+1. **Not archived** – write and report `Archived:`.
+2. **Archived with same SHA** – exit 0 with `Already archived:`. Idempotent; safe to call repeatedly.
+3. **Archived with different SHA** – conflict. Exit 1 with an error and hints. `--force` overwrites; an `archive-name` argument stores under a different name instead.
+4. **Not archived by target name, but SHA already present under a different name** – `_arx_lookup_sha` finds the duplicate. Prints a `Note:` line, then writes anyway (the user explicitly requested this archive entry).
 
 `arx update` applies the same conflict logic for every candidate branch, using the in-memory `arc_by_name` and `arc_by_sha` maps (see Performance section) rather than calling `_arx_lookup_branch` and `_arx_lookup_sha` per branch. If the current SHA is already stored under a different name, the branch is skipped with an `Already safe:` message and counted separately in the summary. This prevents silent duplicate SHA storage during automatic archiving. If the user wants the branch indexed under its natural name too, they can run `git arx add <branch>` explicitly.
 
 ### `arx rename`
 
-Implemented as `_arx_write(new) + _arx_delete(old)` — the abstraction layer fans out to all enabled backends automatically. There is no dedicated rename primitive in either backend; write-then-delete is equivalent.
+Implemented as `_arx_write(new) + _arx_delete(old)` – the abstraction layer fans out to all enabled backends automatically. There is no dedicated rename primitive in either backend; write-then-delete is equivalent.
 
-### `arx log` — Argument Passthrough
+### `arx log` – Argument Passthrough
 
 ```bash
 cmd_log() {
@@ -314,7 +313,7 @@ cmd_log() {
 
 `exec` is intentionally not used here. On Windows/MINGW64, `exec` does not properly transfer the pipe file descriptor to the replacement process, so git detects a terminal instead of a pipe, opens the pager, and the output never reaches the caller. A plain `git log` call avoids this and behaves correctly on all platforms.
 
-### `arx checkout` — gc Detection
+### `arx checkout` – gc Detection
 
 Before attempting to restore, the script checks whether the commit still exists:
 
@@ -324,7 +323,7 @@ if ! git cat-file -e "$sha"; then
 fi
 ```
 
-`git cat-file -e <object>` exits 0 if the object exists in the object store, non-zero otherwise. It does not print anything. This is the correct low-level check — it works for any object type (commit, tree, blob) and does not require the object to be reachable.
+`git cat-file -e <object>` exits 0 if the object exists in the object store, non-zero otherwise. It does not print anything. This is the correct low-level check – it works for any object type (commit, tree, blob) and does not require the object to be reachable.
 
 ### `arx prune`
 
@@ -332,16 +331,16 @@ Finds all archived branches that still exist as local branches, then deletes the
 
 Key behaviors:
 - The currently checked-out branch is always skipped (git would reject the deletion anyway). It is listed separately in the output with a "Skipped (currently checked out)" notice.
-- Without `--force`, the full list is printed and the user must type `"yes"` to proceed. This is intentional — `git branch -D` is irreversible from git's perspective (the archive is the only recovery path).
+- Without `--force`, the full list is printed and the user must type `"yes"` to proceed. This is intentional – `git branch -D` is irreversible from git's perspective (the archive is the only recovery path).
 - `--dry-run` prints the same list and count as a real run but skips the confirmation prompt and does not delete anything.
 
-### `arx sync` — Union Merge Algorithm
+### `arx sync` – Union Merge Algorithm
 
 `sync` is only meaningful when both `arx.storerefs` and `arx.storefile` are enabled, since it reconciles two backends that can theoretically drift.
 
 **When drift happens:**
 
-In normal usage, drift should not occur — every write operation hits both backends atomically (within the script). Drift can arise from:
+In normal usage, drift should not occur – every write operation hits both backends atomically (within the script). Drift can arise from:
 
 1. Someone manually edits `.gitarchive` with a text editor
 2. Someone manually creates/deletes refs with raw git commands
@@ -360,7 +359,7 @@ for each branch in (refs ∪ file):
 
 Non-conflicting entries are always processed. A conflict does not block other entries from being synced. After processing all entries, if any conflicts occurred, `sync` exits with status 1.
 
-**`--dry-run`:** Runs the same comparison logic and prints the same output as a real sync, but skips all writes. A trailing `(dry run — no changes written)` line is appended. Works with or without `--force-file` / `--force-refs` — output shows exactly what would happen if the flag were run without `--dry-run`.
+**`--dry-run`:** Runs the same comparison logic and prints the same output as a real sync, but skips all writes. A trailing `(dry run – no changes written)` line is appended. Works with or without `--force-file` / `--force-refs` – output shows exactly what would happen if the flag were run without `--dry-run`.
 
 **`--force-file` / `--force-refs`:** When a SHA conflict is detected and a force flag is present, the designated backend is treated as the source of truth and the other is overwritten. This is an escape hatch for the rare case where the user knows which side is correct.
 
@@ -373,4 +372,3 @@ Non-conflicting entries are always processed. A conflict does not block other en
 - **`merge` does not resolve SHA conflicts.** When the same branch appears in two files with different SHAs, the conflict is reported and the entry is skipped. The user must manually decide which SHA is correct and edit the output file. There is no `--force-file` / `--force-refs` equivalent for `merge` (unlike `sync`) because `merge` has no concept of a "primary" source.
 - **`push/pull` hardcodes `origin`.** The remote name is not configurable. This could be added via `arx.remote` config in a future version.
 - **No autocomplete.** Branch name tab-completion for `add`, `remove`, `log`, `checkout` is not implemented. Shell completion scripts (bash/zsh/fish) would be a useful addition.
-- **Ref namespace collisions.** Git ref names are hierarchical. Archiving a branch named `update` creates `refs/arx/update` as a file. Archiving `update/packages` needs `refs/arx/update/` to be a directory — the two cannot coexist. If this occurs, use `git arx rename update update-legacy` to free up the name before archiving the slashed branch.

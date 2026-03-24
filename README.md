@@ -1,4 +1,4 @@
-# git-arx — Branch Archive Tool for Git
+# git-arx – Branch Archive Tool for Git
 
 A git tool for archiving local branches. When you delete a branch, `git-arx` keeps a record of its name and last commit so you can list, inspect, and restore it later.
 
@@ -6,9 +6,9 @@ A git tool for archiving local branches. When you delete a branch, `git-arx` kee
 
 ## Why git-arx?
 
-Every developer eventually accumulates a graveyard of local branches — finished features, abandoned experiments, hotfixes from six months ago. You want to clean them up, but deleting a branch feels permanent. What if you need that commit again? So you leave them. Weeks later you have 40 branches and `git branch` is a wall of noise.
+Every developer eventually accumulates a graveyard of local branches – finished features, abandoned experiments, hotfixes from six months ago. You want to clean them up, but deleting a branch feels permanent. What if you need that commit again? So you leave them. Weeks later you have 40 branches and `git branch` is a wall of noise.
 
-The usual answer is "just use `git reflog`" — but reflog is per-machine, expires after 90 days by default, gives you no branch names, and requires you to remember roughly when you were on that branch.
+The usual answer is "just use `git reflog`" – but reflog is per-machine, expires after 90 days by default, gives you no branch names, and requires you to remember roughly when you were on that branch.
 
 **Who this is for:**
 
@@ -16,9 +16,9 @@ The usual answer is "just use `git reflog`" — but reflog is per-machine, expir
 - **Teams on shared repos** where you don't always know whose branch is whose. `git arx status` shows the committer, so you can skip archiving a colleague's branch that somehow ended up on your machine.
 - **Anyone doing periodic repo hygiene.** The whole workflow is three commands: `git arx status` to review, `git arx update` to archive, `git arx prune` to delete. Takes 30 seconds.
 
-**Why not just tag the tip commit?** You could — but then you need to remember to do it before deleting, name it something sensible, and maintain your own tagging convention. `git-arx` does this automatically for all branches at once and keeps a searchable list.
+**Why not just tag the tip commit?** You could – but then you need to remember to do it before deleting, name it something sensible, and maintain your own tagging convention. `git-arx` does this automatically for all branches at once and keeps a searchable list.
 
-**Why not GitHub/GitLab's "restore branch" button?** That only works if the branch was ever pushed. Local-only work — experiments, WIP commits, half-baked ideas — never touches the remote. Those are exactly the branches most worth archiving.
+**Why not GitHub/GitLab's "restore branch" button?** That only works if the branch was ever pushed. Local-only work – experiments, WIP commits, half-baked ideas – never touches the remote. Those are exactly the branches most worth archiving.
 
 ---
 
@@ -29,22 +29,22 @@ Requires **bash 4+** and **git**. Works anywhere those are present.
 | Environment | Status | Notes |
 |---|---|---|
 | Linux | Supported | bash 4+ is standard |
-| macOS — Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
-| macOS — system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
-| Windows — Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
-| Windows — WSL | Supported | Linux environment |
+| macOS – Homebrew bash | Supported | `brew install bash`, ensure it's first on `$PATH` |
+| macOS – system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
+| Windows – Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
+| Windows – WSL | Supported | Linux environment |
 | PowerShell / CMD | **Not supported** | No bash runtime |
 
-The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error — install bash via Homebrew and confirm `which bash` points to it.
+The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error – install bash via Homebrew and confirm `which bash` points to it.
 
 ---
 
 ## Installation
 
-**With curl (no clone needed):**
+**With curl:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash
 ```
 
 **From a local clone:**
@@ -65,7 +65,7 @@ If the install directory is not on your `PATH`, the script will tell you what to
 
 ```bash
 bash install.sh /usr/local/bin
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash -s -- /usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash -s -- /usr/local/bin
 ```
 
 **Manual setup (no install script):**
@@ -81,7 +81,7 @@ git config --global alias.arx '!git-arx'
 ## Quick Start
 
 ```bash
-# Preview which branches would be archived (with author)
+# Preview which branches would be archived
 git arx status
 
 # Archive all local branches that have no remote tracking branch
@@ -106,7 +106,7 @@ git arx checkout feature/my-feature
 
 ### `git arx status`
 
-Show all local branches with no remote upstream — the same set that `git arx update` would process — along with their current SHA, date, author, and archive status. Nothing is written.
+Show all local branches with no remote upstream – the same set that `git arx update` would process – along with their current SHA, date, author, and archive status. Nothing is written.
 
 ```bash
 git arx status
@@ -121,10 +121,10 @@ The **STATUS** column reflects the current state of each branch in the archive:
 
 | Status | Meaning |
 |---|---|
-| `Not archived` | Not in the archive — `update` would archive this branch. |
-| `Archived` | Already in the archive with the same SHA — `update` would skip it. |
-| `Archived as "<name>"` | SHA is already archived under a different name — `update` would skip it. |
-| `Conflict (archived: <sha>)` | In the archive under this name but with a different SHA — `update` would skip it unless `--force`. |
+| `Not archived` | Not in the archive – `update` would archive this branch. |
+| `Archived` | Already in the archive with the same SHA – `update` would skip it. |
+| `Archived as "<name>"` | SHA is already archived under a different name – `update` would skip it. |
+| `Conflict (archived: <sha>)` | In the archive under this name but with a different SHA – `update` would skip it unless `--force`. |
 
 Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git arx update` to write the archive.
 
@@ -156,17 +156,17 @@ git arx update
 
 Branches that have a live upstream (e.g. `origin/main`) are skipped. Branches whose upstream was deleted on the remote (shown as `[gone]` in `git branch -vv`) are archived.
 
-Branches that already have the same SHA in the archive are silently skipped. Branches with a **different** SHA in the archive are reported as conflicts and skipped — use `--force` to overwrite them.
+Branches that already have the same SHA in the archive are silently skipped. Branches with a **different** SHA in the archive are reported as conflicts and skipped – use `--force` to overwrite them.
 
 ```
-Conflict: feature/my-feature (archived: a1b2c3d4, current: deadbeef) — skipped
+Conflict: feature/my-feature (archived: a1b2c3d4, current: deadbeef) – skipped
 Done. Archived 2 branch(es), 1 conflict(s) skipped.
 ```
 
-Branches whose current SHA is **already archived under a different name** are also skipped — the SHA is already safe, and no duplicate entry is needed. The summary reports these separately.
+Branches whose current SHA is **already archived under a different name** are also skipped – the SHA is already safe, and no duplicate entry is needed. The summary reports these separately.
 
 ```
-Already safe: feature/my-feature (a1b2c3d4 archived as "feature/my-feature-old") — skipped
+Already safe: feature/my-feature (a1b2c3d4 archived as "feature/my-feature-old") – skipped
 Done. Archived 1 branch(es), 1 already safe (SHA archived under different name).
 ```
 
@@ -177,7 +177,7 @@ If you do want the branch indexed under its natural name as well (so that `git a
 | Option | Description |
 |---|---|
 | `--force`, `-f` | Overwrite archived entries whose SHA has changed. Outputs `Updated:` instead of `Archived:` for those branches. |
-| `--dry-run`, `-n` | Show which branches would be archived or conflict without writing anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
+| `--dry-run`, `-n` | Show which branches would be archived or conflict without writing anything. Produces the same output as a real run, followed by `(dry run – no changes written)`. |
 
 ```bash
 git arx update --dry-run
@@ -199,7 +199,7 @@ git arx prune
 #   fix/quick-hack
 #
 # WARNING: This is a dangerous operation. Deleted branches cannot be
-# recovered from git — only from the git-arx archive.
+# recovered from git – only from the git-arx archive.
 # Type "yes" to continue: yes
 # Deleted branch feature/old-idea (was a1b2c3d4).
 # Deleted branch fix/quick-hack (was deadbeef).
@@ -213,7 +213,7 @@ If you are currently checked out on an archived branch, it is skipped with a not
 | Option | Description |
 |---|---|
 | `--force`, `-f` | Skip the confirmation prompt and delete immediately. |
-| `--dry-run`, `-n` | Show which branches would be deleted without deleting anything. Produces the same output as a real run, followed by `(dry run — no changes written)`. |
+| `--dry-run`, `-n` | Show which branches would be deleted without deleting anything. Produces the same output as a real run, followed by `(dry run – no changes written)`. |
 
 ```bash
 git arx prune --force
@@ -312,7 +312,7 @@ To overwrite:                  git arx add feature/my-feature --force
 To archive under a new name:   git arx add feature/my-feature <archive-name>
 ```
 
-If the branch's current SHA is **already archived under a different name**, a note is printed before archiving — the command still proceeds, since you explicitly asked for it:
+If the branch's current SHA is **already archived under a different name**, a note is printed before archiving – the command still proceeds, since you explicitly asked for it:
 
 ```
 Note: a1b2c3d4 is already archived as "feature/my-feature-old"
@@ -345,7 +345,7 @@ git arx remove feature/my-feature
 # Removed: feature/my-feature
 ```
 
-This does not delete the local branch — only removes it from the archive.
+This does not delete the local branch – only removes it from the archive.
 
 ---
 
@@ -360,9 +360,9 @@ git arx rename feature/my-feature feature/my-feature-v1
 
 The command exits with an error if the old name is not in the archive, or if the new name already exists.
 
-**Why this is useful — git ref namespace collisions:**
+**Why this is useful – git ref namespace collisions:**
 
-The refs backend stores entries as git refs under `refs/arx/<branch-name>`. Because git refs are hierarchical (stored as files in a directory tree), a branch named `update` stored as `refs/arx/update` and a branch named `update/packages` stored as `refs/arx/update/packages` cannot coexist — `refs/arx/update` is either a file or a directory, not both.
+The refs backend stores entries as git refs under `refs/arx/<branch-name>`. Because git refs are hierarchical (stored as files in a directory tree), a branch named `update` stored as `refs/arx/update` and a branch named `update/packages` stored as `refs/arx/update/packages` cannot coexist – `refs/arx/update` is either a file or a directory, not both.
 
 If this situation arises, rename the existing shorter entry first:
 
@@ -384,7 +384,7 @@ git arx merge .gitarchive /backup/.gitarchive -o merged.gitarchive
 
 - Entries present in only one file are kept as-is.
 - Entries present in both files with the **same SHA** are deduplicated.
-- Entries present in both files with **different SHAs** are reported as conflicts and skipped — they will not appear in the output.
+- Entries present in both files with **different SHAs** are reported as conflicts and skipped – they will not appear in the output.
 
 Requires `arx.storefile` to be enabled.
 
@@ -406,7 +406,7 @@ Use `--dry-run` (`-n`) to see what would be pushed without actually pushing:
 git arx push --dry-run
 # To origin
 #  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
-# (dry run — no changes written)
+# (dry run – no changes written)
 ```
 
 Requires `arx.storerefs` to be enabled.
@@ -442,7 +442,7 @@ git arx sync
 
 | Flag | Description |
 |---|---|
-| `--dry-run`, `-n` | Show what would change without making any changes. Produces the same output as a real run, followed by `(dry run — no changes written)`. Combine with `--force-file` or `--force-refs` to preview what those would do. |
+| `--dry-run`, `-n` | Show what would change without making any changes. Produces the same output as a real run, followed by `(dry run – no changes written)`. Combine with `--force-file` or `--force-refs` to preview what those would do. |
 | `--force-file` | Treat `.gitarchive` as the source of truth: resolve SHA conflicts using the file's SHA, and delete any refs-only entries from refs (they are absent from the file). |
 | `--force-refs` | Treat refs as the source of truth: resolve SHA conflicts using the ref's SHA, and delete any file-only entries from the file (they are absent from refs). |
 
@@ -450,13 +450,13 @@ git arx sync
 git arx sync --dry-run
 # Synced to file: feature/old-idea
 # Sync complete.
-# (dry run — no changes written)
+# (dry run – no changes written)
 
 git arx sync --dry-run --force-refs
 # Resolved (force-refs): feature/old-idea -> file=a1b2c3d4
 # Removed from file (force-refs): fix/dead-end
 # Sync complete.
-# (dry run — no changes written)
+# (dry run – no changes written)
 
 git arx sync --force-refs
 # Resolved (force-refs): feature/old-idea -> file=a1b2c3d4
@@ -476,7 +476,7 @@ Run `git arx help` (or `--help`, `-h`) to print the built-in usage summary at an
 
 ## Storage Backends
 
-### Refs backend — `refs/arx/` (enabled by default)
+### Refs backend – `refs/arx/` (enabled by default)
 
 Git refs stored under `refs/arx/<branch-name>` inside `.git/refs/` (configurable via `arx.refsprefix`). These are standard git refs that git tracks natively.
 
@@ -487,27 +487,27 @@ git log refs/arx/feature/my-feature --oneline
 ```
 
 **Strengths:**
-- As long as a ref exists, `git gc` will never prune the commit it points to — archived commits are safe
-- Native git integration — any git command that accepts a ref or SHA works
+- As long as a ref exists, `git gc` will never prune the commit it points to – archived commits are safe
+- Native git integration – any git command that accepts a ref or SHA works
 - Can be shared via `git arx push` / `git arx pull`
 
-**Weakness:** Lives in `.git/` — not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git arx push`).
+**Weakness:** Lives in `.git/` – not portable, not visible outside the repo. If the repo is recloned from scratch, refs are not automatically restored (unless you pushed them with `git arx push`).
 
-**Why it's on by default:** The primary promise of git-arx is that you can archive a branch and restore it later. If only the file backend is used, a `git gc` run after deletion can silently prune the archived commit — the record in `.gitarchive` becomes a dead pointer. The refs backend prevents this at no cost to the user. Safety first.
+**Why it's on by default:** The primary promise of git-arx is that you can archive a branch and restore it later. If only the file backend is used, a `git gc` run after deletion can silently prune the archived commit – the record in `.gitarchive` becomes a dead pointer. The refs backend prevents this at no cost to the user. Safety first.
 
-### File backend — `.gitarchive` (disabled by default)
+### File backend – `.gitarchive` (disabled by default)
 
 A plain text file at the repository root (or wherever `arx.filepath` points). One entry per line:
 
 ```
-# git-arx archive — do not edit manually
+# git-arx archive – do not edit manually
 feature/my-feature a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 2025-11-15T10:30:00+01:00
 fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 ```
 
 **Strengths:**
-- Human-readable — inspect it with any text editor or `cat .gitarchive`
-- Portable — copy it anywhere, email it, commit it to the repo
+- Human-readable – inspect it with any text editor or `cat .gitarchive`
+- Portable – copy it anywhere, email it, commit it to the repo
 - If committed to the repository, it syncs automatically with every `git push`/`git pull`
 - Can be merged between machines with `git arx merge`
 
@@ -517,7 +517,7 @@ fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 
 ### Using both backends together
 
-Enable both for maximum coverage — refs protect commits from GC, while the file provides a portable, human-readable backup that can be committed to the repo and shared via normal `git push`/`git pull`.
+Enable both for maximum coverage – refs protect commits from GC, while the file provides a portable, human-readable backup that can be committed to the repo and shared via normal `git push`/`git pull`.
 
 ```bash
 git config arx.storerefs true
@@ -537,7 +537,7 @@ All settings are managed via `git config`. They can be set per-repo or globally.
 Controls whether the refs backend is used. Default: `true`. The refs prefix defaults to `refs/arx/` and can be changed with `arx.refsprefix`.
 
 ```bash
-git config arx.storerefs true   # default — GC-safe local storage
+git config arx.storerefs true   # default – GC-safe local storage
 git config arx.storerefs false  # disable if you use file backend only
 ```
 
@@ -618,11 +618,11 @@ scp .gitarchive machine-b:~/project/.gitarchive-a
 git arx merge .gitarchive .gitarchive-a -o .gitarchive
 ```
 
-Or commit `.gitarchive` to the repository — it will sync along with the rest of the codebase via normal git push/pull.
+Or commit `.gitarchive` to the repository – it will sync along with the rest of the codebase via normal git push/pull.
 
 ### Using the file backend for team sharing
 
-Enable the file backend and commit `.gitarchive` to the repo — it will sync automatically with every `git push`/`git pull`, no `git arx push/pull` needed:
+Enable the file backend and commit `.gitarchive` to the repo – it will sync automatically with every `git push`/`git pull`, no `git arx push/pull` needed:
 
 ```bash
 git config arx.storefile true
@@ -643,7 +643,7 @@ git config arx.storerefs false
 
 ## Notes
 
-- `git arx add` never creates duplicate entries — the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.
+- `git arx add` never creates duplicate entries – the archive stores exactly one record per name. Running it again on an already-archived branch with the same SHA exits 0 silently. If the SHA has changed, it errors with a conflict; use `--force` to overwrite.
 - Branch names with slashes (e.g. `feature/login`) work correctly in both backends.
 
 ---
@@ -656,8 +656,8 @@ Implementation details, design decisions, and architectural notes are in [INTERN
 
 ## License
 
-MIT License — see [LICENSE](LICENSE).
+MIT License – see [LICENSE](LICENSE).
 
 ---
 
-*Implemented with [Claude Code](https://claude.ai/claude-code). The concept, design, and all product decisions are my own.*
+*Implemented with [Claude Code](https://claude.com/product/claude-code). The concept, design, and all product decisions are my own.*
