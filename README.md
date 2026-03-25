@@ -79,6 +79,13 @@ chmod +x ~/.local/bin/git-arx
 git config --global alias.arx '!git-arx'
 ```
 
+**Uninstall:**
+
+```bash
+bash uninstall.sh
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/uninstall.sh | bash
+```
+
 ---
 
 ## Quick Start

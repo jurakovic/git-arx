@@ -28,6 +28,7 @@ All commands go through an internal abstraction layer and never touch storage di
 ```
 git-arx                    Single executable bash script – the entire implementation
 install.sh                 Installs git-arx to PATH and sets the git alias
+uninstall.sh               Removes installed files and the git alias
 git-arx-completion.bash    Bash tab completion script
 test.sh                    Test suite
 README.md                  End-user documentation
