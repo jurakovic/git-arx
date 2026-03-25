@@ -7,14 +7,14 @@ set -euo pipefail
 #   bash install.sh
 #
 # Remote install (no clone needed):
-#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash
 #
 # Custom install path:
 #   bash install.sh /usr/local/bin
-#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash -s -- /usr/local/bin
+#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash -s -- /usr/local/bin
 
-RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/master/git-arx"
-COMPLETION_RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/master/git-arx-completion.bash"
+RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/git-arx"
+COMPLETION_RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/git-arx-completion.bash"
 
 # Locate files: check alongside this script first, then download
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || pwd)"
