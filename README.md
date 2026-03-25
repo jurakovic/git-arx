@@ -107,7 +107,7 @@ git arx checkout feature/my-feature
 
 ## Compatibility
 
-Requires **bash 4+**. Works anywhere that is present.
+Requires **bash 4+**. When invoked as `git arx`, Git for Windows provides its own bash runtime, so PowerShell and CMD work without bash on `$PATH`.
 
 | Environment | Status | Notes |
 |---|---|---|
@@ -116,7 +116,7 @@ Requires **bash 4+**. Works anywhere that is present.
 | macOS – system bash | **Not supported** | Ships bash 3.2 (GPL); run `bash --version` to check |
 | Windows – Git Bash (MINGW64) | Supported | Ships with bash 4.4+ |
 | Windows – WSL | Supported | Linux environment |
-| PowerShell / CMD | **Not supported** | No bash runtime |
+| PowerShell / CMD | Supported | Git for Windows provides the bash runtime; `git arx` works, no shell completion |
 
 The bash 4+ requirement comes from `declare -A` (associative arrays). On stock macOS the script will fail with a syntax error – install bash via Homebrew and confirm `which bash` points to it.
 
