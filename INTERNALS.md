@@ -390,8 +390,8 @@ Non-conflicting entries are always processed. A conflict does not block other en
 
 The function is context-aware: it offers different completions depending on the subcommand at `words[2]`:
 
-- Subcommand names at `cword == 2`
-- Archived branch names (via `git arx list`) for `checkout`, `log`, `remove`, `rename`
+- Subcommand names at `cword == 2` (including aliases: `ls`, `rm`, `mv`)
+- Archived branch names (via `git arx list`) for `checkout`, `log`, `remove`/`rm`, `rename`/`mv`
 - Local branch names (via `__git_heads`) for `add`
 - Per-subcommand flags for everything else
 

@@ -16,7 +16,7 @@ _git_arx() {
     _get_comp_words_by_ref -n : cur prev words cword
 
     if [[ $cword -eq 2 ]]; then
-        __gitcomp "status update prune list log checkout add remove rename merge push pull sync help"
+        __gitcomp "status update prune list ls log checkout add remove rm rename mv merge push pull sync help"
         return
     fi
 
@@ -32,7 +32,7 @@ _git_arx() {
     prune)
         __gitcomp "--force --dry-run"
         ;;
-    list)
+    list|ls)
         __gitcomp "--sort=name --sort=date --order=asc --order=desc --storage=file --storage=refs --author"
         ;;
     log)
@@ -49,10 +49,10 @@ _git_arx() {
             __gitcomp "--force"
         fi
         ;;
-    remove)
+    remove|rm)
         [[ $cword -eq 3 ]] && __gitcomp_nl "$(_git_arx_archived)"
         ;;
-    rename)
+    rename|mv)
         # First arg: archived branch (old name); second arg: new name (free text)
         [[ $cword -eq 3 ]] && __gitcomp_nl "$(_git_arx_archived)"
         ;;

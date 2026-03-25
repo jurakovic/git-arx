@@ -251,7 +251,7 @@ git arx prune --dry-run
 
 ### `git arx list`
 
-List all archived branches.
+List all archived branches. Alias: `ls`.
 
 ```bash
 git arx list
@@ -369,7 +369,7 @@ git arx add feature/my-feature feature/my-feature-old
 
 ### `git arx remove <branch>`
 
-Remove a branch from the archive.
+Remove a branch from the archive. Alias: `rm`.
 
 ```bash
 git arx remove feature/my-feature
@@ -382,7 +382,7 @@ This does not delete the local branch – only removes it from the archive.
 
 ### `git arx rename <old-name> <new-name>`
 
-Rename an archived branch. Updates the entry in all enabled backends.
+Rename an archived branch. Updates the entry in all enabled backends. Alias: `mv`.
 
 ```bash
 git arx rename feature/my-feature feature/my-feature-v1

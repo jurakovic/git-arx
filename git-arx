@@ -889,12 +889,12 @@ USAGE
 
 COMMANDS
   add <branch> [archive-name] [--force]  Archive a single branch
-  remove <branch>                        Remove a branch from the archive
-  rename <old> <new>                     Rename an archived branch
+  remove|rm <branch>                     Remove a branch from the archive
+  rename|mv <old> <new>                  Rename an archived branch
   status [--sort=name|date]              Preview archive status of local branches
          [--order=asc|desc]
   update [-f|--force] [-n|--dry-run]     Archive all local branches with no upstream
-  list [--sort=name|date]                List archived branches
+  list|ls [--sort=name|date]             List archived branches
        [--order=asc|desc]
        [--storage=file|refs]
        [--author]
@@ -954,11 +954,11 @@ main() {
 
     case "$cmd" in
         add)      cmd_add "$@" ;;
-        remove)   cmd_remove "$@" ;;
-        rename)   cmd_rename "$@" ;;
-        status)   cmd_status "$@" ;;
-        update)   cmd_update "$@" ;;
-        list)     cmd_list "$@" ;;
+        remove|rm) cmd_remove "$@" ;;
+        rename|mv) cmd_rename "$@" ;;
+        status)    cmd_status "$@" ;;
+        update)    cmd_update "$@" ;;
+        list|ls)   cmd_list "$@" ;;
         log)      cmd_log "$@" ;;
         checkout) cmd_checkout "$@" ;;
         prune)    cmd_prune "$@" ;;
