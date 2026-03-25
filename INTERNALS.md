@@ -6,6 +6,23 @@ For end-user documentation, see [README.md](README.md).
 
 ---
 
+## Contents
+
+- [Overview](#overview)
+- [File Structure](#file-structure)
+- [Why a Bash Script](#why-a-bash-script)
+- [Safety Flags](#safety-flags)
+- [Entry Point and Dispatch](#entry-point-and-dispatch)
+- [Abstraction Layer](#abstraction-layer)
+- [File Backend](#file-backend)
+- [Refs Backend](#refs-backend)
+- [Command Notes](#command-notes)
+- [Shell Completion](#shell-completion)
+- [Testing](#testing)
+- [Known Limitations](#known-limitations)
+
+---
+
 ## Overview
 
 `git-arx` is a single self-contained bash script. There are no dependencies beyond git and bash 4+. The script is structured in six sections separated by comment headers:
@@ -367,6 +384,21 @@ Non-conflicting entries are always processed. A conflict does not block other en
 
 ---
 
+## Shell Completion
+
+`git-arx-completion.bash` defines `_git_arx()` — the function name git-completion.bash looks for when the user presses Tab after `git arx`. The naming convention is the external command name with hyphens replaced by underscores.
+
+The function is context-aware: it offers different completions depending on the subcommand at `words[2]`:
+
+- Subcommand names at `cword == 2`
+- Archived branch names (via `git arx list`) for `checkout`, `log`, `remove`, `rename`
+- Local branch names (via `__git_heads`) for `add`
+- Per-subcommand flags for everything else
+
+Archived branch names are fetched by calling `git arx list` at tab-press time and stripping the two header lines with `awk NR > 2`. This is a subprocess invocation on every completion for those commands — fast enough in practice, but noticeable on repos with very large archives.
+
+---
+
 ## Testing
 
 The test suite lives in `test.sh` and is an integration test suite – it runs the actual `git-arx` script against real git repositories created in a temporary directory. No mocking.
@@ -410,21 +442,6 @@ Each section uses `assert_ok`, `assert_fails`, and `assert_out` helpers. `assert
 Each test section resets the archive state via `reset_archive()` before running. This deletes `.gitarchive` and removes all `refs/arx/` refs, then resets storage to `file`-only. Branches deleted during a test are recreated by `recreate_branches()` where needed.
 
 The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via a `trap ... EXIT` at the end of the run.
-
----
-
-## Shell Completion
-
-`git-arx-completion.bash` defines `_git_arx()` — the function name git-completion.bash looks for when the user presses Tab after `git arx`. The naming convention is the external command name with hyphens replaced by underscores.
-
-The function is context-aware: it offers different completions depending on the subcommand at `words[2]`:
-
-- Subcommand names at `cword == 2`
-- Archived branch names (via `git arx list`) for `checkout`, `log`, `remove`, `rename`
-- Local branch names (via `__git_heads`) for `add`
-- Per-subcommand flags for everything else
-
-Archived branch names are fetched by calling `git arx list` at tab-press time and stripping the two header lines with `awk NR > 2`. This is a subprocess invocation on every completion for those commands — fast enough in practice, but noticeable on repos with very large archives.
 
 ---
 
