@@ -117,7 +117,6 @@ test_help() {
     assert_ok  "help exits 0"        "$ARX" help
     assert_out "help shows USAGE"    "USAGE"    "$ARX" help
     assert_out "help shows COMMANDS" "COMMANDS" "$ARX" help
-    assert_ok  "--help exits 0"      "$ARX" --help
     assert_ok  "-h exits 0"          "$ARX" -h
 }
 

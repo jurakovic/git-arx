@@ -493,7 +493,7 @@ Requires both `arx.storerefs` and `arx.storefile` to be enabled.
 
 ---
 
-Run `git arx help` (or `--help`, `-h`) to print the built-in usage summary at any time.
+Run `git arx help` (or `-h`) to print the built-in usage summary at any time.
 
 ---
 

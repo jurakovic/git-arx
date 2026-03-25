@@ -966,7 +966,7 @@ main() {
         push)     cmd_push "$@" ;;
         pull)     cmd_pull "$@" ;;
         sync)     cmd_sync "$@" ;;
-        help|--help|-h) cmd_help ;;
+        help|-h)  cmd_help ;;
         "")       cmd_help; exit 1 ;;
         *)
             printf 'git-arx: unknown command "%s"\n' "$cmd" >&2

@@ -382,7 +382,7 @@ No install required. The script resolves the path to `git-arx` relative to its o
 The suite is organized into sections, each exercising one command or scenario:
 
 ```
-test_help          git arx help / --help / -h
+test_help          git arx help / -h
 test_add           git arx add (normal, conflict, --force, archive-name)
 test_remove        git arx remove
 test_rename        git arx rename
