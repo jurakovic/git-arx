@@ -4,6 +4,21 @@
 
 ---
 
+## Table of Contents
+
+- [Why git-arx?](#why-git-arx)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Compatibility](#compatibility)
+- [Commands](#commands)
+- [Storage Backends](#storage-backends)
+- [Configuration](#configuration)
+- [Workflows](#workflows)
+- [Internals](#internals)
+- [License](#license)
+
+---
+
 ## Why git-arx?
 
 Every developer eventually accumulates a graveyard of local branches – finished features, abandoned experiments, hotfixes from six months ago. You want to clean them up, but deleting a branch feels permanent. What if you need that commit again? So you leave them. Weeks later you have 40 branches and `git branch` is a wall of noise.
