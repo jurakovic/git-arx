@@ -14,6 +14,7 @@
 - [Storage Backends](#storage-backends)
 - [Configuration](#configuration)
 - [Workflows](#workflows)
+- [Shell Completion](#shell-completion)
 - [Internals](#internals)
 - [License](#license)
 
@@ -664,6 +665,26 @@ git config arx.storerefs false
 
 ---
 
+## Shell Completion
+
+Tab completion for subcommands, flags, and branch names in bash.
+
+`install.sh` installs the completion script automatically to `~/.local/share/bash-completion/completions/git-arx`. Restart your shell afterwards.
+
+**Manual installation:**
+
+```bash
+# Copy the completion script to the user completions directory
+cp git-arx-completion.bash ~/.local/share/bash-completion/completions/git-arx
+
+# Or source it directly from your ~/.bashrc
+echo 'source /path/to/git-arx-completion.bash' >> ~/.bashrc
+```
+
+Requires bash-completion and git-completion.bash to be active in the shell (standard on most Linux distributions and Git for Windows; on macOS install via `brew install bash-completion@2`).
+
+---
+
 ## Internals
 
 Implementation details, design decisions, and architectural notes are in [INTERNALS.md](INTERNALS.md).
@@ -676,4 +697,4 @@ MIT License – see [LICENSE](LICENSE).
 
 ---
 
-<small>*Implemented with [Claude Code](https://claude.com/product/claude-code). The concept, design, and all product decisions are my own.*</small>
+<sub>*Implemented with [Claude Code](https://claude.com/product/claude-code). The concept, design, and all product decisions are my own.*</sub>

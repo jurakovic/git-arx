@@ -14,17 +14,26 @@ set -euo pipefail
 #   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/master/install.sh | bash -s -- /usr/local/bin
 
 RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/master/git-arx"
+COMPLETION_RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/master/git-arx-completion.bash"
 
-# Locate git-arx: check alongside this script first, then download
+# Locate files: check alongside this script first, then download
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || pwd)"
 SCRIPT_SRC="$SCRIPT_DIR/git-arx"
+COMPLETION_SRC="$SCRIPT_DIR/git-arx-completion.bash"
 TMPFILE=""
+COMPLETION_TMPFILE=""
 
 if [[ ! -f "$SCRIPT_SRC" ]]; then
     printf 'Downloading git-arx...\n'
     TMPFILE="$(mktemp)"
     curl -fsSL "$RAW_URL" -o "$TMPFILE"
     SCRIPT_SRC="$TMPFILE"
+fi
+
+if [[ ! -f "$COMPLETION_SRC" ]]; then
+    COMPLETION_TMPFILE="$(mktemp)"
+    curl -fsSL "$COMPLETION_RAW_URL" -o "$COMPLETION_TMPFILE"
+    COMPLETION_SRC="$COMPLETION_TMPFILE"
 fi
 
 # Determine install directory
@@ -50,9 +59,19 @@ cp "$SCRIPT_SRC" "$INSTALL_DIR/git-arx"
 chmod +x "$INSTALL_DIR/git-arx"
 printf 'Installed: %s/git-arx\n' "$INSTALL_DIR"
 
-# Cleanup temp file if we downloaded
+# Cleanup temp files if we downloaded
 if [[ -n "$TMPFILE" ]]; then
     rm -f "$TMPFILE"
+fi
+
+# Install bash completion
+COMPLETION_DIR="$HOME/.local/share/bash-completion/completions"
+mkdir -p "$COMPLETION_DIR"
+cp "$COMPLETION_SRC" "$COMPLETION_DIR/git-arx"
+printf 'Installed completion: %s/git-arx\n' "$COMPLETION_DIR"
+
+if [[ -n "$COMPLETION_TMPFILE" ]]; then
+    rm -f "$COMPLETION_TMPFILE"
 fi
 
 # Check if install dir is on PATH

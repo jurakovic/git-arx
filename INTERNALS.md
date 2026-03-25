@@ -26,12 +26,13 @@ All commands go through an internal abstraction layer and never touch storage di
 ## File Structure
 
 ```
-git-arx          Single executable bash script – the entire implementation
-install.sh       Installs git-arx to PATH and sets the git alias
-test.sh          Test suite
-README.md        End-user documentation
-INTERNALS.md     This file
-LICENSE          MIT License
+git-arx                    Single executable bash script – the entire implementation
+install.sh                 Installs git-arx to PATH and sets the git alias
+git-arx-completion.bash    Bash tab completion script
+test.sh                    Test suite
+README.md                  End-user documentation
+INTERNALS.md               This file
+LICENSE                    MIT License
 ```
 
 ---
@@ -411,10 +412,25 @@ The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via
 
 ---
 
+## Shell Completion
+
+`git-arx-completion.bash` defines `_git_arx()` — the function name git-completion.bash looks for when the user presses Tab after `git arx`. The naming convention is the external command name with hyphens replaced by underscores.
+
+The function is context-aware: it offers different completions depending on the subcommand at `words[2]`:
+
+- Subcommand names at `cword == 2`
+- Archived branch names (via `git arx list`) for `checkout`, `log`, `remove`, `rename`
+- Local branch names (via `__git_heads`) for `add`
+- Per-subcommand flags for everything else
+
+Archived branch names are fetched by calling `git arx list` at tab-press time and stripping the two header lines with `awk NR > 2`. This is a subprocess invocation on every completion for those commands — fast enough in practice, but noticeable on repos with very large archives.
+
+---
+
 ## Known Limitations
 
 - **No locking.** The archive file has no write lock. Concurrent invocations (unlikely for an interactive tool) could corrupt it. Acceptable trade-off.
 - **bash 4+ required.** Uses `declare -A` associative arrays. macOS ships bash 3.2; users need to install bash via Homebrew and ensure it's on their PATH.
 - **`merge` does not resolve SHA conflicts.** When the same branch appears in two files with different SHAs, the conflict is reported and the entry is skipped. The user must manually decide which SHA is correct and edit the output file. There is no `--force-file` / `--force-refs` equivalent for `merge` (unlike `sync`) because `merge` has no concept of a "primary" source.
 - **`push/pull` hardcodes `origin`.** The remote name is not configurable. This could be added via `arx.remote` config in a future version.
-- **No autocomplete.** Branch name tab-completion for `add`, `remove`, `log`, `checkout` is not implemented. Shell completion scripts (bash/zsh/fish) would be a useful addition.
+- **Bash completion only.** `git-arx-completion.bash` covers bash. zsh and fish completion scripts are not provided.
