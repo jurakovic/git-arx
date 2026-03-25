@@ -891,7 +891,7 @@ COMMANDS
   add <branch> [archive-name] [--force]  Archive a single branch
   remove <branch>                        Remove a branch from the archive
   rename <old> <new>                     Rename an archived branch
-  status [--sort=name|date]              Show branches that would be archived by update
+  status [--sort=name|date]              Preview archive status of local branches
          [--order=asc|desc]
   update [-f|--force] [-n|--dry-run]     Archive all local branches with no upstream
   list [--sort=name|date]                List archived branches
@@ -924,9 +924,10 @@ STORAGE BACKENDS
 
 OTHER CONFIG
   arx.filepath      Path to archive file (default: .gitarchive)
-  arx.refsprefix   Refs namespace prefix (default: refs/arx/)
+  arx.refsprefix    Refs namespace prefix (default: refs/arx/)
 
 EXAMPLES
+  git arx status
   git arx add feature/my-feature
   git arx add feature/my-feature --force
   git arx add feature/my-feature feature/my-feature-old

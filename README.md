@@ -1,6 +1,6 @@
 # git-arx
 
-A git tool for archiving local branches. Before you delete a branch, run `git-arx` to keep a record of its name and last commit so you can list, inspect, and restore it later.
+`git-arx` is a git tool for archiving local branches. Before you delete a branch, run `git-arx` to keep a record of its name and last commit so you can list, inspect, and restore it later.
 
 ---
 
@@ -24,6 +24,47 @@ The usual answer is "just use `git reflog`" – but reflog is per-machine, expir
 
 ---
 
+## Installation
+
+**Install the latest version from GitHub:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash
+```
+
+**Alternatively, install from a local clone:**
+
+```bash
+git clone https://github.com/jurakovic/git-arx.git
+cd git-arx
+bash install.sh
+```
+
+Both methods copy `git-arx` to `~/.local/bin` (Linux/macOS) or `~/bin` (Windows/MINGW64), make it executable, and set the global git alias:
+
+```bash
+git config --global alias.arx '!git-arx'
+```
+
+If the install directory is not on your `PATH`, the script will tell you what to add to your shell profile.
+
+**Custom install path:**
+
+```bash
+bash install.sh /usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash -s -- /usr/local/bin
+```
+
+**Manual setup (no install script):**
+
+```bash
+cp git-arx ~/.local/bin/git-arx   # Linux/macOS
+chmod +x ~/.local/bin/git-arx
+git config --global alias.arx '!git-arx'
+```
+
+---
+
 ## Quick Start
 
 ```bash
@@ -44,45 +85,6 @@ git arx log feature/my-feature --oneline
 
 # Restore a branch
 git arx checkout feature/my-feature
-```
-
----
-
-## Installation
-
-**With curl:**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash
-```
-
-**From a local clone:**
-
-```bash
-bash install.sh
-```
-
-Both methods copy `git-arx` to `~/.local/bin` (Linux/macOS) or `~/bin` (Windows/MINGW64), make it executable, and set the global git alias:
-
-```
-git config --global alias.arx '!git-arx'
-```
-
-If the install directory is not on your `PATH`, the script will tell you what to add to your shell profile.
-
-**Custom install path:**
-
-```bash
-bash install.sh /usr/local/bin
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash -s -- /usr/local/bin
-```
-
-**Manual setup (no install script):**
-
-```bash
-cp git-arx ~/.local/bin/git-arx   # Linux/macOS
-chmod +x ~/.local/bin/git-arx
-git config --global alias.arx '!git-arx'
 ```
 
 ---
@@ -659,4 +661,4 @@ MIT License – see [LICENSE](LICENSE).
 
 ---
 
-*Implemented with [Claude Code](https://claude.com/product/claude-code). The concept, design, and all product decisions are my own.*
+<small>*Implemented with [Claude Code](https://claude.com/product/claude-code). The concept, design, and all product decisions are my own.*</small>
