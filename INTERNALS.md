@@ -19,6 +19,7 @@ For end-user documentation, see [README.md](README.md).
 - [Command Notes](#command-notes)
 - [Shell Completion](#shell-completion)
 - [Testing](#testing)
+- [Versioning](#versioning)
 - [Known Limitations](#known-limitations)
 
 ---
@@ -444,6 +445,20 @@ Each section uses `assert_ok`, `assert_fails`, and `assert_out` helpers. `assert
 Each test section resets the archive state via `reset_archive()` before running. This deletes `.gitarchive` and removes all `refs/arx/` refs, then resets storage to `file`-only. Branches deleted during a test are recreated by `recreate_branches()` where needed.
 
 The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via a `trap ... EXIT` at the end of the run.
+
+---
+
+## Versioning
+
+To bump the version to `vX` (e.g. `v1.1`):
+
+1. `git-arx` — update `VERSION="..."` near the top of the file
+2. `install.sh` — update `VERSION="..."` to match the new tag (e.g. `"v1.1"`)
+3. Commit, then create git tag `vX` and update the `latest` tag
+
+Tag conventions:
+- `latest` — always points to the newest release (move it on every release)
+- `vX` tags (e.g. `v1`, `v1.1`) — immutable once created, never moved
 
 ---
 

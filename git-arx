@@ -7,6 +7,8 @@ set -euo pipefail
 # Usage: git arx <command> [options]
 # =============================================================================
 
+VERSION="1.1.0"
+
 # --- CONFIG HELPERS ----------------------------------------------------------
 
 _arx_require_git() {
@@ -914,8 +916,8 @@ cmd_pull() {
 }
 
 cmd_help() {
-    cat <<'EOF'
-git-arx – Branch Archive Tool for Git
+    cat <<EOF
+git-arx $VERSION – Branch Archive Tool for Git
 
 Archive local git branches that have no remote tracking branch, preserving
 the branch name and HEAD SHA for later inspection or restoration.
@@ -944,6 +946,7 @@ COMMANDS
        [--force-file]
        [--force-refs]
   help                                   Show this help
+  --version, -v                          Show version
 
 STORAGE BACKENDS
   Configured via two independent flags:
@@ -982,11 +985,15 @@ EOF
 # --- ENTRY POINT -------------------------------------------------------------
 
 main() {
-    _arx_require_git
-    ARX_GIT_ROOT=$(_arx_git_root)
-
     local cmd="${1:-}"
     shift || true
+
+    case "$cmd" in
+        --version|-v) printf 'git-arx %s\n' "$VERSION"; return 0 ;;
+    esac
+
+    _arx_require_git
+    ARX_GIT_ROOT=$(_arx_git_root)
 
     case "$cmd" in
         add)      cmd_add "$@" ;;

@@ -13,7 +13,7 @@ set -euo pipefail
 #   bash install.sh /usr/local/bin
 #   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash -s -- /usr/local/bin
 
-VERSION="v1"
+VERSION="v1.1"
 RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/${VERSION}/git-arx"
 COMPLETION_RAW_URL="https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/${VERSION}/git-arx-completion.bash"
 
