@@ -163,12 +163,15 @@ Useful as a preview step before running `update`, especially in shared repositor
 |---|---|
 | `--sort=name` | Sort alphabetically by branch name (default) |
 | `--sort=date` | Sort by commit date |
-| `--order=asc` | Ascending order (default) |
+| `--order=asc` | Ascending order |
 | `--order=desc` | Descending order |
 | `--all`, `-a` | Also show archived branches not already listed above |
 
+The default order depends on the sort key: `asc` for `--sort=name`, `desc` for `--sort=date`. When dates are equal, name is used as a tiebreaker.
+
 ```bash
-git arx status --sort=date --order=desc
+git arx status --sort=date
+git arx status --sort=date --order=asc
 ```
 
 ---
@@ -271,12 +274,14 @@ git arx list
 | `--sort=name` | Sort alphabetically by branch name |
 | `--sort=date` | Sort by commit date (default) |
 | `--order=asc` | Ascending order |
-| `--order=desc` | Descending order (default) |
+| `--order=desc` | Descending order |
 | `--storage=file\|refs` | Show only branches from the given backend (default: all configured backends) |
 | `--author` | Add an AUTHOR column showing the last committer on each branch |
 
+The default order depends on the sort key: `desc` for `--sort=date`, `asc` for `--sort=name`. When dates are equal, name is used as a tiebreaker.
+
 ```bash
-git arx list --sort=name --order=asc
+git arx list --sort=name
 git arx list --storage=refs
 git arx list --storage=file
 git arx list --author

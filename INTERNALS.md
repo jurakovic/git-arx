@@ -262,7 +262,7 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 `arx update` writes the archive for each candidate. `arx status` runs the same detection and determines each branch's archive state (`Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`). Nothing is written.
 
-`arx status` accepts `--sort=name|date` and `--order=asc|desc` (defaults: `name`, `asc`). Rows are collected first, then sorted as a post-processing step before printing.
+`arx status` accepts `--sort=name|date` and `--order=asc|desc`. The default sort is `name`; the default order depends on the sort key — `asc` for name, `desc` for date — unless overridden explicitly. When sorting by date, name is used as a tiebreaker. Rows are collected first, then sorted as a post-processing step before printing. `arx list` uses the same sort/order logic.
 
 `arx status --all` (or `-a`) additionally includes archived branches not already present in the output – those that still have a valid remote upstream or no longer exist locally. After the `git for-each-ref` loop, the command compares `arc_by_name` keys against the `local_branches` set (populated during the loop) to find orphan entries. Their authors are fetched in a single `git log --no-walk` call, with `(gc)` as a fallback for pruned commits. These rows are appended to the same `rows` array and go through the same sort and print path.
 

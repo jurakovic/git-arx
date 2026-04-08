@@ -410,7 +410,7 @@ cmd_update() {
 }
 
 cmd_status() {
-    local sort_by="name" order="asc" show_all=0
+    local sort_by="name" order="" show_all=0
     for arg in "$@"; do
         case "$arg" in
             --sort=name)  sort_by="name" ;;
@@ -421,6 +421,9 @@ cmd_status() {
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
+
+    # Default order depends on sort key: newest-first for date, A-Z for name.
+    [[ -z "$order" ]] && { [[ "$sort_by" == "date" ]] && order="desc" || order="asc"; }
 
     # Load entire archive once into associative arrays for O(1) lookup,
     # avoiding repeated _arx_read_all calls inside the branch loop.
@@ -494,9 +497,10 @@ cmd_status() {
         return 0
     fi
 
-    local sort_field sort_flag
+    local sort_field sort_flag sort_keys
     [[ "$sort_by" == "name" ]] && sort_field=1 || sort_field=3
     [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
+    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field} -k1" || sort_keys="-k${sort_field}"
 
     printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
     printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
@@ -507,11 +511,11 @@ cmd_status() {
         ac=${#a}; saved_lc="${LC_ALL:-}"; LC_ALL=C; bc=${#a}; LC_ALL="$saved_lc"
         aw=$(( 20 + bc - ac ))
         printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$st"
-    done < <(printf '%s\n' "${rows[@]}" | sort $sort_flag -t$'\t' -k"${sort_field}")
+    done < <(printf '%s\n' "${rows[@]}" | sort $sort_flag -t$'\t' $sort_keys)
 }
 
 cmd_list() {
-    local sort_by="date" order="desc" list_storage="" show_author=0
+    local sort_by="date" order="" list_storage="" show_author=0
 
     for arg in "$@"; do
         case "$arg" in
@@ -528,6 +532,9 @@ cmd_list() {
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
+
+    # Default order depends on sort key: newest-first for date, A-Z for name.
+    [[ -z "$order" ]] && { [[ "$sort_by" == "date" ]] && order="desc" || order="asc"; }
 
     # Validate that the requested backend is available in the current storage config
     if [[ -n "$list_storage" ]]; then
@@ -547,13 +554,14 @@ cmd_list() {
     fi
 
     # Sort: field 1 = branch name, field 3 = date (ISO-8601 sorts lexicographically)
-    local sort_field sort_flag
+    local sort_field sort_flag sort_keys
     [[ "$sort_by" == "name" ]] && sort_field=1 || sort_field=3
     [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
+    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field} -k1" || sort_keys="-k${sort_field}"
 
     # shellcheck disable=SC2086
     local sorted
-    sorted=$(printf '%s\n' "$entries" | sort $sort_flag -k"${sort_field}")
+    sorted=$(printf '%s\n' "$entries" | sort $sort_flag $sort_keys)
 
     # For --author, fetch all authors in one git log call instead of per-entry.
     declare -A author_by_sha
