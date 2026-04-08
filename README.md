@@ -135,6 +135,8 @@ The bash 4+ requirement comes from `declare -A` (associative arrays). On stock m
 
 Show all local branches with no remote upstream – the same set that `git arx update` would process – along with their current SHA, date, author, and archive status. Nothing is written.
 
+Use `--all` / `-a` to also include archived branches that are not already listed (i.e. those that still have a valid remote upstream or no longer exist locally).
+
 ```bash
 git arx status
 # BRANCH                                   SHA       DATE         AUTHOR               STATUS
@@ -163,6 +165,7 @@ Useful as a preview step before running `update`, especially in shared repositor
 | `--sort=date` | Sort by commit date |
 | `--order=asc` | Ascending order (default) |
 | `--order=desc` | Descending order |
+| `--all`, `-a` | Also show archived branches not already listed above |
 
 ```bash
 git arx status --sort=date --order=desc

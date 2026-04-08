@@ -410,25 +410,28 @@ cmd_update() {
 }
 
 cmd_status() {
-    local sort_by="name" order="asc"
+    local sort_by="name" order="asc" show_all=0
     for arg in "$@"; do
         case "$arg" in
             --sort=name)  sort_by="name" ;;
             --sort=date)  sort_by="date" ;;
             --order=asc)  order="asc" ;;
             --order=desc) order="desc" ;;
+            --all|-a)     show_all=1 ;;
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
 
     # Load entire archive once into associative arrays for O(1) lookup,
     # avoiding repeated _arx_read_all calls inside the branch loop.
-    declare -A arc_by_name arc_by_sha
+    declare -A arc_by_name arc_by_sha arc_date_by_name
     while IFS=' ' read -r b sha date rest; do
         arc_by_name["$b"]="$sha"
+        arc_date_by_name["$b"]="$date"
         [[ -z "${arc_by_sha[$sha]:-}" ]] && arc_by_sha["$sha"]="$b" || true
     done < <(_arx_read_all)
 
+    declare -A local_branches=()
     local -a rows=()
     # Single for-each-ref call fetches SHA, date, author, and upstream for
     # all branches at once – replaces per-branch git rev-parse + git log calls.
@@ -436,6 +439,7 @@ cmd_status() {
     # tabs collapse – a mid-format empty %(upstream) would shift all following
     # fields left. Placing it last lets bash strip the trailing tab cleanly.
     while IFS=$'\t' read -r branch sha date author upstream_ref; do
+        local_branches["$branch"]=1
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
@@ -460,6 +464,30 @@ cmd_status() {
     done < <(git for-each-ref \
         --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(authorname)%09%(upstream)' \
         refs/heads/)
+
+    # --all: also include archived branches with no local counterpart.
+    if [[ $show_all -eq 1 ]]; then
+        local -a orphan_branches=() orphan_shas=()
+        for arc_branch in "${!arc_by_name[@]}"; do
+            if [[ -z "${local_branches[$arc_branch]:-}" ]]; then
+                orphan_branches+=("$arc_branch")
+                orphan_shas+=("${arc_by_name[$arc_branch]}")
+            fi
+        done
+        if [[ ${#orphan_shas[@]} -gt 0 ]]; then
+            declare -A author_by_sha=()
+            while IFS=' ' read -r sha author_name; do
+                author_by_sha["$sha"]="$author_name"
+            done < <(git log --no-walk --format='%H %an' "${orphan_shas[@]}" 2>/dev/null || true)
+            local arc_sha arc_date arc_author
+            for arc_branch in "${orphan_branches[@]}"; do
+                arc_sha="${arc_by_name[$arc_branch]}"
+                arc_date="${arc_date_by_name[$arc_branch]:0:10}"
+                arc_author="${author_by_sha[$arc_sha]:-"(gc)"}"
+                rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$arc_branch" "${arc_sha:0:8}" "$arc_date" "$arc_author" "Archived")")
+            done
+        fi
+    fi
 
     if [[ ${#rows[@]} -eq 0 ]]; then
         printf 'No local branches without a remote upstream.\n'
