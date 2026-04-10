@@ -281,30 +281,101 @@ test_update() {
     section "update"
     reset_archive
 
-    # status: shows candidates without writing
+    # --- Never-pushed branches (no upstream configured) ---
+    # status --all shows them with "Local only"; status (no --all) hides them
     local dry_out
-    dry_out=$("$ARX" status 2>&1)
+    dry_out=$("$ARX" status --all 2>&1)
     if printf '%s' "$dry_out" | grep -qF "feature/alpha"; then
-        pass "status: shows branch with no upstream"
+        pass "status --all: shows never-pushed branch"
     else
-        fail "status: shows branch with no upstream"
+        fail "status --all: shows never-pushed branch"
+    fi
+    if printf '%s' "$dry_out" | grep -qF "Local only"; then
+        pass "status --all: shows Local only for never-pushed unarchived branch"
+    else
+        fail "status --all: shows Local only for never-pushed unarchived branch"
+        printf '      got: %s\n' "$dry_out"
     fi
     if printf '%s' "$dry_out" | grep -qF "STATUS"; then
-        pass "status: shows STATUS column header"
+        pass "status --all: shows STATUS column header"
     else
-        fail "status: shows STATUS column header"
+        fail "status --all: shows STATUS column header"
         printf '      got: %s\n' "$dry_out"
     fi
     if printf '%s' "$dry_out" | grep -qF "SHA"; then
+        pass "status --all: shows SHA column header"
+    else
+        fail "status --all: shows SHA column header"
+    fi
+    if [[ ! -f .gitarchive ]]; then
+        pass "status --all: does not write archive"
+    else
+        fail "status --all: does not write archive"
+    fi
+    assert_out "status --all: shows author" "Test" "$ARX" status --all
+
+    local no_all_out
+    no_all_out=$("$ARX" status 2>&1)
+    if ! printf '%s' "$no_all_out" | grep -qF "feature/alpha"; then
+        pass "status: hides never-pushed branches without --all"
+    else
+        fail "status: hides never-pushed branches without --all"
+        printf '      got: %s\n' "$no_all_out"
+    fi
+
+    # update skips never-pushed branches
+    local skip_never_pushed_out
+    skip_never_pushed_out=$("$ARX" update 2>&1)
+    if ! printf '%s' "$skip_never_pushed_out" | grep -qF "Archived: feature/alpha"; then
+        pass "update: skips never-pushed branch"
+    else
+        fail "update: skips never-pushed branch"
+        printf '      got: %s\n' "$skip_never_pushed_out"
+    fi
+    if printf '%s' "$skip_never_pushed_out" | grep -qF "Archived 0 branch(es)"; then
+        pass "update: reports 0 for never-pushed only"
+    else
+        fail "update: reports 0 for never-pushed only"
+        printf '      got: %s\n' "$skip_never_pushed_out"
+    fi
+
+    # --- Simulate remote-deleted branches ---
+    # Set upstream config for each branch, then delete the tracking ref.
+    # This mimics the state after the remote branch was deleted and git fetch --prune ran.
+    local b sha
+    for b in feature/alpha feature/beta fix/gamma; do
+        sha=$(git rev-parse "refs/heads/$b")
+        git update-ref "refs/remotes/origin/$b" "$sha"
+        git branch --set-upstream-to="origin/$b" "$b" 2>/dev/null
+        git update-ref -d "refs/remotes/origin/$b"
+    done
+
+    reset_archive
+
+    # status (no --all): shows remote-deleted branches with "Not archived"
+    local dry_out2
+    dry_out2=$("$ARX" status 2>&1)
+    if printf '%s' "$dry_out2" | grep -qF "feature/alpha"; then
+        pass "status: shows remote-deleted branch"
+    else
+        fail "status: shows remote-deleted branch"
+    fi
+    if printf '%s' "$dry_out2" | grep -qF "STATUS"; then
+        pass "status: shows STATUS column header"
+    else
+        fail "status: shows STATUS column header"
+        printf '      got: %s\n' "$dry_out2"
+    fi
+    if printf '%s' "$dry_out2" | grep -qF "SHA"; then
         pass "status: shows SHA column header"
     else
         fail "status: shows SHA column header"
     fi
-    if printf '%s' "$dry_out" | grep -qF "Not archived"; then
-        pass "status: shows Not archived for unarchived branch"
+    if printf '%s' "$dry_out2" | grep -qF "Not archived"; then
+        pass "status: shows Not archived for unarchived remote-deleted branch"
     else
-        fail "status: shows Not archived for unarchived branch"
-        printf '      got: %s\n' "$dry_out"
+        fail "status: shows Not archived for unarchived remote-deleted branch"
+        printf '      got: %s\n' "$dry_out2"
     fi
     if [[ ! -f .gitarchive ]]; then
         pass "status: does not write archive"
@@ -316,9 +387,9 @@ test_update() {
     local out
     out=$("$ARX" update 2>&1)
     if printf '%s' "$out" | grep -qF "Archived: feature/alpha"; then
-        pass "update: archives branch with no upstream"
+        pass "update: archives remote-deleted branch"
     else
-        fail "update: archives branch with no upstream"
+        fail "update: archives remote-deleted branch"
     fi
     # After archiving, status should show "Archived" for those branches
     local status_after
@@ -342,12 +413,8 @@ test_update() {
         printf '      got: %s\n' "$out"
     fi
 
-    # Give feature/alpha a live upstream so it should be skipped
-    git checkout feature/alpha -q
-    git push origin feature/alpha -q 2>/dev/null
-    git branch --set-upstream-to=origin/feature/alpha 2>/dev/null || true
-    git checkout "$DEFAULT_BRANCH" -q
-
+    # Restore the tracking ref for feature/alpha to simulate a live upstream
+    git update-ref "refs/remotes/origin/feature/alpha" "$SHA_ALPHA"
     reset_archive
     out=$("$ARX" update 2>&1)
     if ! printf '%s' "$out" | grep -qF "Archived: feature/alpha"; then
@@ -355,10 +422,8 @@ test_update() {
     else
         fail "update: skips branch with live upstream"
     fi
-
-    # Restore: remove tracking so later tests are not affected
-    git branch --unset-upstream feature/alpha 2>/dev/null || true
-    git update-ref -d refs/remotes/origin/feature/alpha 2>/dev/null || true
+    # Remove it again to restore remote-deleted state
+    git update-ref -d refs/remotes/origin/feature/alpha
 
     # --dry-run: shows same output without writing
     reset_archive
@@ -515,6 +580,11 @@ test_update() {
         fail "status: conflict+SHA duplicate: should not show Conflict"
         printf '      got: %s\n' "$combined_status_out"
     fi
+
+    # Cleanup: restore never-pushed state so later tests are not affected
+    for b in feature/alpha feature/beta fix/gamma; do
+        git branch --unset-upstream "$b" 2>/dev/null || true
+    done
 }
 
 test_log() {

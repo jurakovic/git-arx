@@ -251,21 +251,27 @@ This is also how fully automatic remote sync is possible without `git arx push/p
 
 ### `arx update` and `arx status`
 
-Both commands use the same upstream-detection logic. Both also use the same performance optimisation – see below.
+Both commands use `%(upstream)` from `git for-each-ref` to classify local branches:
 
-`%(upstream)` outputs the full ref path of the configured upstream (e.g. `refs/remotes/origin/main`). If no upstream is configured, the field is empty. A branch is a candidate for archiving if the upstream field is empty (never had a remote) or `git rev-parse --verify "$upstream_ref"` fails (upstream configured but the tracking ref no longer exists locally).
+- **Empty `%(upstream)`** — no upstream ever configured: the branch was never pushed ("local only").
+- **Non-empty `%(upstream)`, `git rev-parse --verify` fails** — upstream was configured but the tracking ref no longer exists locally: the remote branch was deleted (after `git fetch --prune` or manual pruning).
+- **Non-empty `%(upstream)`, `git rev-parse --verify` succeeds** — tracking ref exists: live remote branch, skip.
 
 This approach is more robust than checking `%(upstream:track)` for the string `[gone]` because:
 - `[gone]` can vary by git version or locale
 - The ref-existence check is a direct, binary fact about the object store
 
-Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream:short)` still outputs `origin/deleted-branch` for pruned branches. Using `%(upstream)` (the full ref) and checking whether that ref resolves correctly handles both the "never had a remote" and "remote was deleted" cases.
+Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream)` still outputs the full ref path for pruned branches. Checking whether that ref resolves handles both the "never had a remote" and "remote was deleted" cases.
 
-`arx update` writes the archive for each candidate. `arx status` runs the same detection and determines each branch's archive state (`Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`). Nothing is written.
+**`arx update`** only processes remote-deleted branches (non-empty upstream that doesn't resolve). Never-pushed branches are skipped — they require an explicit `git arx add` if the user wants to archive them.
+
+**`arx status`** (default) shows only remote-deleted branches, with archive states `Not archived`, `Archived`, `Archived as "<name>"`, or `Conflict`. Nothing is written.
+
+**`arx status --all`** additionally shows:
+1. Never-pushed local branches — shown with status `Local only` when not yet archived (or `Archived` / `Conflict` if they have been archived manually).
+2. Archived branches that no longer exist locally — after the `git for-each-ref` loop, the command compares `arc_by_name` keys against the `local_branches` set to find orphan entries. Their authors are fetched in a single `git log --no-walk` call, with `(gc)` as a fallback for pruned commits. These rows are appended to the same `rows` array and go through the same sort and print path.
 
 `arx status` accepts `--sort=name|date` and `--order=asc|desc`. The default sort is `name`; the default order depends on the sort key — `asc` for name, `desc` for date — unless overridden explicitly. When sorting by date, name is used as a tiebreaker. Rows are collected first, then sorted as a post-processing step before printing. `arx list` uses the same sort/order logic.
-
-`arx status --all` (or `-a`) additionally includes archived branches not already present in the output – those that still have a valid remote upstream or no longer exist locally. After the `git for-each-ref` loop, the command compares `arc_by_name` keys against the `local_branches` set (populated during the loop) to find orphan entries. Their authors are fetched in a single `git log --no-walk` call, with `(gc)` as a fallback for pruned commits. These rows are appended to the same `rows` array and go through the same sort and print path.
 
 **`printf` byte-vs-character width.** `printf %-Ns` pads a field to N *bytes*, not N display columns. Author names containing multibyte UTF-8 characters (e.g. `ć`, `ž`) are longer in bytes than in characters, so the STATUS column shifts left for those rows. `arx status` corrects for this before printing each row: it measures the author string in both character count (`${#a}` with the active locale) and byte count (`${#a}` with `LC_ALL=C`), then widens the format field by the difference.
 

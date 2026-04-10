@@ -356,8 +356,12 @@ cmd_update() {
 
     local archived=0 conflicts=0 already_safe=0
     while IFS=$'\t' read -r branch sha date upstream_ref; do
+        # Skip never-pushed branches (no upstream configured); only archive remote-deleted ones
+        if [[ -z "$upstream_ref" ]]; then
+            continue
+        fi
         # Skip if upstream ref exists locally (live remote tracking branch)
-        if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
+        if git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
             continue
         fi
 
@@ -445,7 +449,19 @@ cmd_status() {
     # fields left. Placing it last lets bash strip the trailing tab cleanly.
     while IFS=$'\t' read -r branch sha date author upstream_ref; do
         local_branches["$branch"]=1
+        # Skip if upstream ref exists locally (live remote tracking branch)
         if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
+            continue
+        fi
+
+        # Classify: remote-deleted (had upstream, now gone) vs never-pushed (no upstream)
+        local is_local_only=0
+        if [[ -z "$upstream_ref" ]]; then
+            is_local_only=1
+        fi
+
+        # Without --all, show only remote-deleted branches
+        if [[ $show_all -eq 0 && $is_local_only -eq 1 ]]; then
             continue
         fi
 
@@ -461,7 +477,11 @@ cmd_status() {
             elif [[ -n "$existing_sha" ]]; then
                 status="Conflict (archived: ${existing_sha:0:8})"
             else
-                status="Not archived"
+                if [[ $is_local_only -eq 1 ]]; then
+                    status="Local only"
+                else
+                    status="Not archived"
+                fi
             fi
         fi
 
@@ -495,7 +515,11 @@ cmd_status() {
     fi
 
     if [[ ${#rows[@]} -eq 0 ]]; then
-        printf 'No local branches without a remote upstream.\n'
+        if [[ $show_all -eq 0 ]]; then
+            printf 'No local branches with a deleted remote.\n'
+        else
+            printf 'No local branches without a remote upstream.\n'
+        fi
         return 0
     fi
 
@@ -929,9 +953,9 @@ COMMANDS
   add <branch> [archive-name] [--force]  Archive a single branch
   remove|rm <branch>                     Remove a branch from the archive
   rename|mv <old> <new>                  Rename an archived branch
-  status [--sort=name|date]              Preview archive status of local branches
-         [--order=asc|desc]
-  update [-f|--force] [-n|--dry-run]     Archive all local branches with no upstream
+  status [--sort=name|date]              Show local branches with deleted remote
+         [--order=asc|desc]              (--all also shows never-pushed branches)
+  update [-f|--force] [-n|--dry-run]     Archive local branches with deleted remote
   list|ls [--sort=name|date]             List archived branches
        [--order=asc|desc]
        [--storage=file|refs]
