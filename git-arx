@@ -41,6 +41,12 @@ _arx_config_refsprefix() {
     git config --get arx.refsprefix 2>/dev/null || printf 'refs/arx/'
 }
 
+_arx_config_remote_tracking_prefix() {
+    local refsprefix
+    refsprefix=$(_arx_config_refsprefix)
+    printf '%s' "${refsprefix%/}-remote/origin/"
+}
+
 _arx_require_storage() {
     local required="$1"
     local use_refs use_file
@@ -534,9 +540,31 @@ cmd_status() {
         C_YELLOW=$'\033[33m' C_DIM=$'\033[2m' C_RESET=$'\033[0m'
     fi
 
-    printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
-    printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
-    local b s d a st aw saved_lc ac bc colored_st
+    # Show REMOTE column in --all mode when refs backend is active
+    local show_remote=0
+    declare -A remote_sha_by_branch=()
+    if [[ $show_all -eq 1 ]]; then
+        local use_refs
+        use_refs=$(_arx_config_storerefs)
+        if [[ "$use_refs" == "true" ]]; then
+            show_remote=1
+            local refsprefix remote_prefix
+            refsprefix=$(_arx_config_refsprefix)
+            remote_prefix=$(_arx_config_remote_tracking_prefix)
+            while IFS=' ' read -r refname sha _rest; do
+                remote_sha_by_branch["${refname#"$remote_prefix"}"]="$sha"
+            done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix" 2>/dev/null || true)
+        fi
+    fi
+
+    if [[ $show_remote -eq 1 ]]; then
+        printf '%-40s %-9s %-12s %-20s %-30s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS" "REMOTE"
+        printf '%-40s %-9s %-12s %-20s %-30s %s\n' "------" "---" "----" "------" "------" "------"
+    else
+        printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
+        printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
+    fi
+    local b s d a st aw saved_lc ac bc colored_st remote_st sw sc scb
     # shellcheck disable=SC2086
     while IFS=$'\t' read -r b s d a st; do
         # %-20s pads by bytes; correct for multibyte chars in author names.
@@ -550,7 +578,25 @@ cmd_status() {
             "Local only")    colored_st="${C_DIM}${st}${C_RESET}" ;;
             *)               colored_st="$st" ;;
         esac
-        printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st"
+        if [[ $show_remote -eq 1 ]]; then
+            # Correct STATUS field width for invisible color-code bytes
+            sc=${#st}; LC_ALL=C; scb=${#colored_st}; LC_ALL="$saved_lc"
+            sw=$(( 30 + scb - sc ))
+            local arc_sha_full="${arc_by_name[$b]:-}"
+            local r_sha="${remote_sha_by_branch[$b]:-}"
+            if [[ -z "$arc_sha_full" ]]; then
+                remote_st="${C_DIM}-${C_RESET}"
+            elif [[ -z "$r_sha" ]]; then
+                remote_st="${C_RED}local${C_RESET}"
+            elif [[ "$r_sha" == "$arc_sha_full" ]]; then
+                remote_st="${C_GREEN}pushed${C_RESET}"
+            else
+                remote_st="${C_YELLOW}ahead${C_RESET}"
+            fi
+            printf "%-40s %-9s %-12s %-${aw}s %-${sw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st" "$remote_st"
+        else
+            printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st"
+        fi
     done < <(printf '%s\n' "${rows[@]}" | sort $sort_flag -t$'\t' $sort_keys)
 }
 
@@ -617,17 +663,62 @@ cmd_list() {
         fi
     fi
 
+    local C_RED='' C_GREEN='' C_YELLOW='' C_RESET=''
+    if [[ -t 1 ]]; then
+        C_RED=$'\033[31m' C_GREEN=$'\033[32m' C_YELLOW=$'\033[33m' C_RESET=$'\033[0m'
+    fi
+
+    # Show REMOTE column when refs backend is active (not when filtered to file-only)
+    local show_remote=0
+    local use_refs
+    use_refs=$(_arx_config_storerefs)
+    if [[ "$use_refs" == "true" && "$list_storage" != "file" ]]; then
+        show_remote=1
+    fi
+
+    # Load remote tracking refs for REMOTE column
+    declare -A remote_sha_map=()
+    if [[ $show_remote -eq 1 ]]; then
+        local refsprefix remote_prefix
+        refsprefix=$(_arx_config_refsprefix)
+        remote_prefix=$(_arx_config_remote_tracking_prefix)
+        while IFS=' ' read -r refname sha _rest; do
+            remote_sha_map["${refname#"$remote_prefix"}"]="$sha"
+        done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix" 2>/dev/null || true)
+    fi
+
     # Print header and table
-    if [[ $show_author -eq 1 ]]; then
+    if [[ $show_author -eq 1 && $show_remote -eq 1 ]]; then
+        printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "REMOTE"
+        printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
+    elif [[ $show_author -eq 1 ]]; then
         printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR"
+        printf '%-40s %-9s %-12s %s\n' "------" "---" "----" "------"
+    elif [[ $show_remote -eq 1 ]]; then
+        printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "REMOTE"
         printf '%-40s %-9s %-12s %s\n' "------" "---" "----" "------"
     else
         printf '%-40s %-9s %s\n' "BRANCH" "SHA" "DATE"
         printf '%-40s %-9s %s\n' "------" "---" "----"
     fi
     while IFS=' ' read -r branch sha date rest; do
-        if [[ $show_author -eq 1 ]]; then
+        local remote_st=""
+        if [[ $show_remote -eq 1 ]]; then
+            local r_sha="${remote_sha_map[$branch]:-}"
+            if [[ -z "$r_sha" ]]; then
+                remote_st="${C_RED}local${C_RESET}"
+            elif [[ "$r_sha" == "$sha" ]]; then
+                remote_st="${C_GREEN}pushed${C_RESET}"
+            else
+                remote_st="${C_YELLOW}ahead${C_RESET}"
+            fi
+        fi
+        if [[ $show_author -eq 1 && $show_remote -eq 1 ]]; then
+            printf '%-40s %-9s %-12s %-20s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-\(gc\)}" "$remote_st"
+        elif [[ $show_author -eq 1 ]]; then
             printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-\(gc\)}"
+        elif [[ $show_remote -eq 1 ]]; then
+            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "$remote_st"
         else
             printf '%-40s %-9s %s\n' "$branch" "${sha:0:8}" "${date:0:10}"
         fi
@@ -923,8 +1014,9 @@ cmd_prune() {
 
 cmd_push() {
     _arx_require_storage refs
-    local dry_run="" refsprefix
+    local dry_run="" refsprefix remote_prefix
     refsprefix=$(_arx_config_refsprefix)
+    remote_prefix=$(_arx_config_remote_tracking_prefix)
     for arg in "$@"; do
         case "$arg" in
             --dry-run|-n) dry_run="--dry-run" ;;
@@ -932,14 +1024,26 @@ cmd_push() {
         esac
     done
     git push $dry_run origin "${refsprefix}*:${refsprefix}*"
-    [[ -n "$dry_run" ]] && printf '(dry run – no changes written)\n' || true
+    if [[ -z "$dry_run" ]]; then
+        # Update remote tracking refs to reflect what was just pushed
+        while IFS=' ' read -r refname sha _rest; do
+            git update-ref "${remote_prefix}${refname#"$refsprefix"}" "$sha"
+        done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix")
+    else
+        printf '(dry run – no changes written)\n'
+    fi
 }
 
 cmd_pull() {
     _arx_require_storage refs
-    local refsprefix
+    local refsprefix remote_prefix
     refsprefix=$(_arx_config_refsprefix)
-    git fetch origin "${refsprefix}*:${refsprefix}*"
+    remote_prefix=$(_arx_config_remote_tracking_prefix)
+    # Fetch remote arx refs into the tracking namespace, then sync to local refs
+    git fetch origin "${refsprefix}*:${remote_prefix}*"
+    while IFS=' ' read -r refname sha _rest; do
+        git update-ref "${refsprefix}${refname#"$remote_prefix"}" "$sha"
+    done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix")
 
     # If file backend is also enabled, sync fetched refs into .gitarchive
     local use_file

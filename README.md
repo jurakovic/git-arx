@@ -158,6 +158,8 @@ The **STATUS** column reflects the current state of each branch in the archive:
 
 When writing to a terminal, status values are color-coded: `Not archived` in red, `Archived` in green, `Archived as "..."` in light blue, `Conflict` in yellow, and `Local only` in dim.
 
+With `--all`, a **REMOTE** column is also shown (when the refs backend is active), indicating whether each archived ref has been pushed — same values and semantics as in `git arx list`.
+
 Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git arx update` to write the archive.
 
 **Options:**
@@ -264,11 +266,19 @@ List all archived branches. Alias: `ls`.
 
 ```bash
 git arx list
-# BRANCH                                   SHA       DATE
-# ------                                   ---       ----
-# feature/my-feature                       a1b2c3d4  2025-11-15
-# fix/old-bug                              deadbeef  2025-10-01
+# BRANCH                                   SHA       DATE         REMOTE
+# ------                                   ---       ----         ------
+# feature/my-feature                       a1b2c3d4  2025-11-15   pushed
+# fix/old-bug                              deadbeef  2025-10-01   local
 ```
+
+The **REMOTE** column is shown when the refs backend is active (the default). It reflects the last known remote state — updated by `git arx push` and `git arx pull`, with no network call at list time:
+
+| Value | Meaning |
+|---|---|
+| `pushed` | Remote has this ref at the same SHA. |
+| `ahead` | Remote has this ref but at a different (older) SHA — you have unpushed changes. |
+| `local` | Remote has never seen this ref. |
 
 **Options:**
 
@@ -278,7 +288,7 @@ git arx list
 | `--sort=date` | Sort by commit date (default) |
 | `--order=asc` | Ascending order |
 | `--order=desc` | Descending order |
-| `--storage=file\|refs` | Show only branches from the given backend (default: all configured backends) |
+| `--storage=file\|refs` | Show only branches from the given backend (default: all configured backends). Hides the REMOTE column when `file` is specified. |
 | `--author` | Add an AUTHOR column showing the last committer on each branch |
 
 The default order depends on the sort key: `desc` for `--sort=date`, `asc` for `--sort=name`. When dates are equal, name is used as a tiebreaker.
@@ -434,7 +444,7 @@ Requires `arx.storefile` to be enabled.
 
 ### `git arx push`
 
-Push archived refs to the remote, making them available to other clones of the repository.
+Push archived refs to the remote, making them available to other clones of the repository. After a successful push, local remote-tracking refs are updated so that `git arx list` and `git arx status --all` can report accurate `REMOTE` values without a network call.
 
 ```bash
 git arx push
@@ -457,7 +467,7 @@ Requires `arx.storerefs` to be enabled.
 
 ### `git arx pull`
 
-Fetch archived refs from the remote. If `arx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
+Fetch archived refs from the remote. Remote-tracking refs are updated so that `git arx list` and `git arx status --all` reflect the current remote state. If `arx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
 
 ```bash
 git arx pull

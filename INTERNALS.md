@@ -241,7 +241,17 @@ Refs under the arx prefix are not pushed by default. Git only pushes `refs/heads
 git push origin 'refs/arx/*:refs/arx/*'
 ```
 
-This pushes all refs under the prefix to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket. The `pull` command uses the equivalent fetch refspec.
+This pushes all refs under the prefix to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket.
+
+After a successful push, `arx push` updates a local remote-tracking namespace derived from `arx.refsprefix` — e.g. `refs/arx/` → `refs/arx-remote/origin/`. Each pushed ref is mirrored there via `git update-ref` so that `arx list` and `arx status --all` can report an accurate `REMOTE` column without a network call.
+
+`arx pull` inverts this: it fetches `refs/arx/*` from the remote into the tracking namespace first, then copies those refs into `refs/arx/*` locally. This preserves a clean record of the last known remote state regardless of any local-only archive entries that were added between pulls.
+
+```bash
+# pull fetches into tracking namespace, then promotes to local refs
+git fetch origin 'refs/arx/*:refs/arx-remote/origin/*'
+# then: git update-ref refs/arx/<branch> <sha>  for each tracking ref
+```
 
 This is also how fully automatic remote sync is possible without `git arx push/pull` when using both backends: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
 
@@ -270,10 +280,13 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 **`arx status --all`** additionally shows:
 1. Never-pushed local branches — shown with status `Local only` when not yet archived (or `Archived` / `Conflict` if they have been archived manually).
 2. Archived branches that no longer exist locally — after the `git for-each-ref` loop, the command compares `arc_by_name` keys against the `local_branches` set to find orphan entries. Their authors are fetched in a single `git log --no-walk` call, with `(gc)` as a fallback for pruned commits. These rows are appended to the same `rows` array and go through the same sort and print path.
+3. A **REMOTE** column (when the refs backend is active) — loaded once from `refs/arx-remote/origin/*` into `remote_sha_by_branch[branch]=sha` before the print loop. Each row is classified as `pushed` (remote SHA matches archive SHA), `ahead` (remote SHA differs), `local` (no tracking ref), or `-` (branch not in archive). The `-` case applies to `Not archived` rows where there is no archive entry to compare against.
 
 `arx status` accepts `--sort=name|date` and `--order=asc|desc`. The default sort is `name`; the default order depends on the sort key — `asc` for name, `desc` for date — unless overridden explicitly. When sorting by date, name is used as a tiebreaker. Rows are collected first, then sorted as a post-processing step before printing. `arx list` uses the same sort/order logic.
 
-**`printf` byte-vs-character width.** `printf %-Ns` pads a field to N *bytes*, not N display columns. Author names containing multibyte UTF-8 characters (e.g. `ć`, `ž`) are longer in bytes than in characters, so the STATUS column shifts left for those rows. `arx status` corrects for this before printing each row: it measures the author string in both character count (`${#a}` with the active locale) and byte count (`${#a}` with `LC_ALL=C`), then widens the format field by the difference.
+**Color output.** Both `arx status` and `arx list` emit ANSI color codes only when stdout is a terminal (`[[ -t 1 ]]`). Piped or redirected output is always plain text. `arx status` colors the STATUS column: red (`Not archived`), green (`Archived`), light blue / bright cyan (`Archived as "..."`), yellow (`Conflict`), dim (`Local only`). Both commands color the REMOTE column: green (`pushed`), yellow (`ahead`), red (`local`), dim (`-`).
+
+**`printf` byte-vs-character width.** `printf %-Ns` pads a field to N *bytes*, not N display columns. Author names containing multibyte UTF-8 characters (e.g. `ć`, `ž`) are longer in bytes than in characters, so subsequent columns shift left for those rows. `arx status` corrects for this before printing each row: it measures the string in both character count (`${#s}` with the active locale) and byte count (`${#s}` with `LC_ALL=C`), then widens the format field by the difference. The same correction is applied to the STATUS column when the REMOTE column is present — ANSI color codes add invisible bytes to the colored STATUS string, which would otherwise throw off its fixed-width padding.
 
 ### Performance (`arx update`, `arx status`, `arx list --author`)
 
@@ -373,7 +386,7 @@ In normal usage, drift should not occur – every write operation hits both back
 1. Someone manually edits `.gitarchive` with a text editor
 2. Someone manually creates/deletes refs with raw git commands
 3. A script crash between the file write and the ref write
-4. Running `git fetch origin 'refs/arx/*:refs/arx/*'` directly instead of `git arx pull` (updates refs but not the file)
+4. Running `git fetch origin 'refs/arx/*:refs/arx/*'` directly instead of `git arx pull` (updates local arx refs but bypasses the tracking namespace and the file backend)
 
 **Algorithm:**
 
