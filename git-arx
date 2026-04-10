@@ -528,15 +528,29 @@ cmd_status() {
     [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
     [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field} -k1" || sort_keys="-k${sort_field}"
 
+    local C_RED='' C_GREEN='' C_CYAN='' C_YELLOW='' C_DIM='' C_RESET=''
+    if [[ -t 1 ]]; then
+        C_RED=$'\033[31m' C_GREEN=$'\033[32m' C_CYAN=$'\033[96m'
+        C_YELLOW=$'\033[33m' C_DIM=$'\033[2m' C_RESET=$'\033[0m'
+    fi
+
     printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
     printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
-    local b s d a st aw saved_lc ac bc
+    local b s d a st aw saved_lc ac bc colored_st
     # shellcheck disable=SC2086
     while IFS=$'\t' read -r b s d a st; do
         # %-20s pads by bytes; correct for multibyte chars in author names.
         ac=${#a}; saved_lc="${LC_ALL:-}"; LC_ALL=C; bc=${#a}; LC_ALL="$saved_lc"
         aw=$(( 20 + bc - ac ))
-        printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$st"
+        case "$st" in
+            "Not archived")  colored_st="${C_RED}${st}${C_RESET}" ;;
+            "Archived")      colored_st="${C_GREEN}${st}${C_RESET}" ;;
+            Archived\ as\ *) colored_st="${C_CYAN}${st}${C_RESET}" ;;
+            Conflict*)       colored_st="${C_YELLOW}${st}${C_RESET}" ;;
+            "Local only")    colored_st="${C_DIM}${st}${C_RESET}" ;;
+            *)               colored_st="$st" ;;
+        esac
+        printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st"
     done < <(printf '%s\n' "${rows[@]}" | sort $sort_flag -t$'\t' $sort_keys)
 }
 

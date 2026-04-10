@@ -154,6 +154,9 @@ The **STATUS** column reflects the current state of each branch in the archive:
 | `Archived` | Already in the archive with the same SHA – `update` would skip it. |
 | `Archived as "<name>"` | SHA is already archived under a different name – `update` would skip it. |
 | `Conflict (archived: <sha>)` | In the archive under this name but with a different SHA – `update` would skip it unless `--force`. |
+| `Local only` | Never pushed to any remote – only visible with `--all`. `update` does not process these; use `git arx add` to archive manually. |
+
+When writing to a terminal, status values are color-coded: `Not archived` in red, `Archived` in green, `Archived as "..."` in light blue, `Conflict` in yellow, and `Local only` in dim.
 
 Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git arx update` to write the archive.
 
