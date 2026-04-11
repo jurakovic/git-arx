@@ -476,15 +476,16 @@ The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via
 
 ## Versioning
 
-To bump the version to `vX` (e.g. `v1.1`):
+`git-arx` uses commit hashes as its version identifier. The source file always contains `VERSION="dev"` — this placeholder is replaced at install time by `install.sh`.
 
-1. `git-arx` — update `VERSION="..."` near the top of the file
-2. `install.sh` — update `VERSION="..."` to match the new tag (e.g. `"v1.1"`)
-3. Commit, then create git tag `vX` and update the `latest` tag
+**How the stamp works:**
 
-Tag conventions:
-- `latest` — always points to the newest release (move it on every release)
-- `vX` tags (e.g. `v1`, `v1.1`) — immutable once created, never moved
+- **Local install** (`bash install.sh`): `install.sh` reads the short commit hash from the repo alongside it via `git rev-parse --short HEAD` and writes it into the installed file using `sed`.
+- **Remote install** (`curl ... | bash`): `install.sh` queries the GitHub API for the latest commit on `master` and writes that hash into the installed file.
+
+After install, `git arx --version` reports the short commit hash that was current at install time (e.g. `git-arx abc1234`). To check whether the installed version is up to date, compare against the latest commit on `master` in the repository.
+
+`VERSION="dev"` in the source is intentional — it is never manually edited. Do not commit a real hash into the source file.
 
 ---
 

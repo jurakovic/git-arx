@@ -7,7 +7,7 @@ set -euo pipefail
 # Usage: git arx <command> [options]
 # =============================================================================
 
-VERSION="1.2.0"
+VERSION="dev"
 
 # --- CONFIG HELPERS ----------------------------------------------------------
 
@@ -1135,7 +1135,7 @@ cmd_pull() {
 
 cmd_help() {
     cat <<EOF
-git-arx $VERSION – Branch Archive Tool for Git
+git-arx – Branch Archive Tool for Git (version: $VERSION)
 
 Archive local git branches that have no remote tracking branch, preserving
 the branch name and HEAD SHA for later inspection or restoration.

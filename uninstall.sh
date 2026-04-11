@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Usage:
 #   bash uninstall.sh
-#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/uninstall.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/heads/master/uninstall.sh | bash
 #
 #   bash uninstall.sh /usr/local/bin   # if installed to a custom path
 

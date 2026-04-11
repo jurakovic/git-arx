@@ -45,7 +45,7 @@ The usual answer is "just use `git reflog`" – but reflog is per-machine, expir
 **Install the latest version from GitHub:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/heads/master/install.sh | bash
 ```
 
 **Alternatively, install from a local clone:**
@@ -68,7 +68,7 @@ If the install directory is not on your `PATH`, the script will tell you what to
 
 ```bash
 bash install.sh /usr/local/bin
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/install.sh | bash -s -- /usr/local/bin
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/heads/master/install.sh | bash -s -- /usr/local/bin
 ```
 
 **Manual setup (no install script):**
@@ -83,7 +83,7 @@ git config --global alias.arx '!git-arx'
 
 ```bash
 bash uninstall.sh
-curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/tags/latest/uninstall.sh | bash
+curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/heads/master/uninstall.sh | bash
 ```
 
 ---
