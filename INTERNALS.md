@@ -253,6 +253,13 @@ git fetch origin 'refs/arx/*:refs/arx-remote/origin/*'
 # then: git update-ref refs/arx/<branch> <sha>  for each tracking ref
 ```
 
+`arx fetch` is a read-only preview of what `arx pull` would bring in. It uses `git ls-remote` to query the remote ref list without downloading any objects, then compares against local `refs/arx/*`:
+
+- `new` — on the remote, not locally; pull would add it
+- `up to date` — same SHA on both sides; pull is a no-op for this branch
+- `changed` — different SHAs; pull would overwrite local with the remote SHA
+- `local` — local only, not on the remote; unaffected by pull
+
 This is also how fully automatic remote sync is possible without `git arx push/pull` when using both backends: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
 
 ---
@@ -450,7 +457,7 @@ test_prune         git arx prune (--dry-run, --force, current branch skipped)
 test_merge         git arx merge (dedup, conflicts)
 test_refs_backend  refs-only storage
 test_both_backend  both backends enabled (union reads, sync)
-test_push_pull     git arx push / pull (requires a bare remote)
+test_push_pull     git arx push / fetch / pull (requires a bare remote)
 test_sync          git arx sync (--dry-run, --force-file, --force-refs)
 test_slashed_branches  branch names with slashes
 test_double_add    idempotency of add

@@ -804,6 +804,15 @@ test_push_pull() {
         fail "push: ref should be on remote"
     fi
 
+    # fetch – after push both branches should be up to date
+    assert_out "fetch: shows up to date after push" "up to date" "$ARX" fetch
+    assert_fails "fetch: unknown option"             "$ARX" fetch --bogus
+
+    # Locally re-archive one branch at a different SHA so fetch shows "changed"
+    git update-ref refs/arx/feature/alpha "$SHA_BETA"
+    assert_out "fetch: shows changed when SHA differs" "changed" "$ARX" fetch
+    git update-ref refs/arx/feature/alpha "$SHA_ALPHA"  # restore
+
     # Fresh clone – test pull
     local repo2="$TMPROOT/repo2"
     git clone "$REMOTE" "$repo2" -q
@@ -812,7 +821,8 @@ test_push_pull() {
     git config user.name "Test"
     set_storage refs
 
-    assert_ok "pull: succeeds in fresh clone" "$ARX" pull
+    assert_out "fetch: shows new in fresh clone" "new" "$ARX" fetch
+    assert_ok  "pull: succeeds in fresh clone"   "$ARX" pull
 
     if git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
         pass "pull: ref present after pull"

@@ -471,6 +471,31 @@ Requires `arx.storerefs` to be enabled.
 
 ---
 
+### `git arx fetch`
+
+Preview what `git arx pull` would bring in, without downloading anything. Uses `git ls-remote` to query the remote and compares against local refs — no objects are transferred.
+
+```bash
+git arx fetch
+# BRANCH                                   SHA       STATUS
+# ------                                   ---       ------
+# feature/my-feature                       a1b2c3d4  up to date
+# fix/old-bug                              cafe1234  new
+# refactor                                 deadbeef  changed
+# wip/experiment                           ab12ef34  local
+```
+
+| Status | Meaning |
+|---|---|
+| `new` | On the remote, not locally — `pull` would add it. |
+| `up to date` | Same SHA locally and on the remote — `pull` is a no-op for this branch. |
+| `changed` | Different SHAs — `pull` would update local to the remote SHA. |
+| `local` | Local only, not on the remote — unaffected by `pull`. |
+
+Requires `arx.storerefs` to be enabled.
+
+---
+
 ### `git arx pull`
 
 Fetch archived refs from the remote. Remote-tracking refs are updated so that `git arx list` and `git arx status --all` reflect the current remote state. If `arx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
