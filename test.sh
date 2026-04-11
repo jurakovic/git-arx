@@ -18,8 +18,8 @@ DEFAULT_BRANCH=""
 # Helpers
 # ---------------------------------------------------------------------------
 
-pass() { printf '  PASS  %s\n' "$1"; PASS=$(( PASS + 1 )); }
-fail() { printf '  FAIL  %s\n' "$1"; FAIL=$(( FAIL + 1 )); }
+pass() { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$(( PASS + 1 )); }
+fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$(( FAIL + 1 )); }
 
 assert_ok() {       # label cmd...
     local label="$1"; shift
@@ -1092,7 +1092,7 @@ main() {
 
     teardown
 
-    printf '\n=== Results: %d passed, %d failed ===\n' "$PASS" "$FAIL"
+    printf '\n=== Results: \033[32m%d passed\033[0m, \033[31m%d failed\033[0m ===\n' "$PASS" "$FAIL"
     [[ $FAIL -eq 0 ]]
 }
 
