@@ -452,6 +452,12 @@ git arx push
 #  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
 ```
 
+Use `--force` (`-f`) to force-push refs whose SHA has changed (e.g. after re-archiving a branch at a different commit):
+
+```bash
+git arx push --force
+```
+
 Use `--dry-run` (`-n`) to see what would be pushed without actually pushing:
 
 ```bash
