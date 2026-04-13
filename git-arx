@@ -1016,16 +1016,48 @@ cmd_prune() {
 
 cmd_push() {
     _arx_require_storage refs
-    local dry_run="" force="" refsprefix remote_prefix
+    local dry_run="" force="" prune=0 delete_branch="" refsprefix remote_prefix
     refsprefix=$(_arx_config_refsprefix)
     remote_prefix=$(_arx_config_remote_tracking_prefix)
-    for arg in "$@"; do
-        case "$arg" in
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
             --dry-run|-n) dry_run="--dry-run" ;;
             --force|-f)   force="--force" ;;
-            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+            --prune)      prune=1 ;;
+            --delete|-d)
+                shift
+                [[ -z "${1:-}" ]] && { printf 'git-arx: --delete requires a branch name\n' >&2; exit 1; }
+                delete_branch="$1"
+                ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$1" >&2; exit 1 ;;
         esac
+        shift
     done
+
+    if [[ -n "$delete_branch" ]]; then
+        git push $dry_run origin --delete "${refsprefix}${delete_branch}"
+        if [[ -z "$dry_run" ]]; then
+            git update-ref -d "${remote_prefix}${delete_branch}" 2>/dev/null || true
+        fi
+        return
+    fi
+
+    if [[ $prune -eq 1 ]]; then
+        git push $dry_run $force --prune origin "${refsprefix}*:${refsprefix}*"
+        if [[ -z "$dry_run" ]]; then
+            # Rebuild remote tracking refs to match what's now on remote (= local after prune)
+            while IFS=' ' read -r refname _rest; do
+                git update-ref -d "$refname"
+            done < <(git for-each-ref --format='%(refname)' "$remote_prefix" 2>/dev/null || true)
+            while IFS=' ' read -r refname sha _rest; do
+                git update-ref "${remote_prefix}${refname#"$refsprefix"}" "$sha"
+            done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix")
+        else
+            printf '(dry run – no changes written)\n'
+        fi
+        return
+    fi
+
     git push $dry_run $force origin "${refsprefix}*:${refsprefix}*"
     if [[ -z "$dry_run" ]]; then
         # Update remote tracking refs to reflect what was just pushed
@@ -1161,6 +1193,8 @@ COMMANDS
   prune [-f|--force] [-n|--dry-run]      Delete local branches that are archived
   merge <f1> <f2> -o <out>               Merge two .gitarchive files       [file only]
   push [-f|--force] [-n|--dry-run]       Push archived refs to remote      [refs only]
+       [--prune]                         Also delete remote refs not in local archive
+       [--delete <branch>]               Delete a single archived ref from remote
   fetch                                  Preview what pull would bring in  [refs only]
   pull                                   Pull archived refs from remote    [refs only]
   sync [-n|--dry-run]                    Reconcile file and refs backends  [file+refs]

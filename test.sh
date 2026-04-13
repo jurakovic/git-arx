@@ -840,6 +840,40 @@ test_push_pull() {
     fi
 
     cd "$REPO"
+    set_storage refs
+
+    # push --delete: remove a single ref from remote
+    "$ARX" push > /dev/null  # ensure both refs are on remote
+    assert_ok "push --delete: succeeds" "$ARX" push --delete feature/alpha
+    if ! git ls-remote "$REMOTE" 'refs/arx/feature/alpha' | grep -q 'refs/arx/'; then
+        pass "push --delete: ref removed from remote"
+    else
+        fail "push --delete: ref should be gone from remote"
+    fi
+    if ! git rev-parse --verify refs/arx-remote/origin/feature/alpha > /dev/null 2>&1; then
+        pass "push --delete: remote tracking ref cleaned up"
+    else
+        fail "push --delete: remote tracking ref should be cleaned up"
+    fi
+    assert_ok    "push --delete: --dry-run succeeds"    "$ARX" push --dry-run --delete feature/beta
+    assert_fails "push --delete: missing branch name"   "$ARX" push --delete
+
+    # push --prune: delete remote refs that no longer exist locally
+    "$ARX" push > /dev/null  # re-push feature/alpha and feature/beta
+    "$ARX" remove feature/beta > /dev/null
+    assert_ok "push --prune: succeeds" "$ARX" push --prune
+    if ! git ls-remote "$REMOTE" 'refs/arx/feature/beta' | grep -q 'refs/arx/'; then
+        pass "push --prune: removed ref from remote"
+    else
+        fail "push --prune: ref should be gone from remote"
+    fi
+    if git ls-remote "$REMOTE" 'refs/arx/feature/alpha' | grep -q 'refs/arx/'; then
+        pass "push --prune: kept ref that still exists locally"
+    else
+        fail "push --prune: should keep ref that still exists locally"
+    fi
+    assert_ok "push --prune: --dry-run succeeds" "$ARX" push --prune --dry-run
+
     set_storage file
 }
 

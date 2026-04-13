@@ -64,7 +64,11 @@ _git_arx() {
         fi
         ;;
     push)
-        __gitcomp "--force --dry-run"
+        if [[ "$prev" == "--delete" || "$prev" == "-d" ]]; then
+            __gitcomp_nl "$(_git_arx_archived)"
+        else
+            __gitcomp "--force --dry-run --prune --delete"
+        fi
         ;;
     fetch)
         ;;
