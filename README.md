@@ -158,7 +158,11 @@ The **STATUS** column reflects the current state of each branch in the archive:
 
 When writing to a terminal, status values are color-coded: `Not archived` in red, `Archived` in green, `Archived as "..."` in light blue, `Conflict` in yellow, and `Local only` in dim.
 
-With `--all`, a **REMOTE** column is also shown (when the refs backend is active), indicating whether each archived ref has been pushed — same values and semantics as in `git arx list`.
+With `--all`, a **REMOTE** column is also shown (when the refs backend is active), indicating the remote state of each ref. Values are the same as in `git arx list` (`pushed`, `ahead`, `local`, `-`), plus one additional value:
+
+| Value | Meaning |
+|---|---|
+| `remote` | Not in the local archive but still exists on the remote — recoverable via `git arx pull`. |
 
 Useful as a preview step before running `update`, especially in shared repositories where you want to confirm which branches are yours. Once satisfied, run `git arx update` to write the archive.
 
@@ -465,6 +469,18 @@ git arx push --dry-run
 # To origin
 #  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
 # (dry run – no changes written)
+```
+
+Use `--delete` (`-d`) to delete a single archived ref from the remote. Also cleans up the local remote-tracking ref:
+
+```bash
+git arx push --delete feature/my-feature
+```
+
+Use `--prune` to delete all remote refs that no longer exist in the local archive — the mirror image of a normal push:
+
+```bash
+git arx push --prune
 ```
 
 Requires `arx.storerefs` to be enabled.

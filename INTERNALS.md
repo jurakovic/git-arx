@@ -245,6 +245,10 @@ This pushes all refs under the prefix to the same path on the remote. Supported 
 
 After a successful push, `arx push` updates a local remote-tracking namespace derived from `arx.refsprefix` — e.g. `refs/arx/` → `refs/arx-remote/origin/`. Each pushed ref is mirrored there via `git update-ref` so that `arx list` and `arx status --all` can report an accurate `REMOTE` column without a network call.
 
+`arx push --delete <branch>` deletes a single ref from the remote using `git push origin --delete refs/arx/<branch>`, then removes the corresponding local remote-tracking ref.
+
+`arx push --prune` adds `--prune` to the glob refspec push, which causes git to delete any remote refs under the prefix that have no local counterpart. After the push, the local remote-tracking namespace is rebuilt from scratch to match the new remote state (delete all tracking refs, then re-mirror from current local refs).
+
 `arx pull` inverts this: it fetches `refs/arx/*` from the remote into the tracking namespace first, then copies those refs into `refs/arx/*` locally. This preserves a clean record of the last known remote state regardless of any local-only archive entries that were added between pulls.
 
 ```bash
@@ -287,11 +291,11 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 **`arx status --all`** additionally shows:
 1. Never-pushed local branches — shown with status `Local only` when not yet archived (or `Archived` / `Conflict` if they have been archived manually).
 2. Archived branches that no longer exist locally — after the `git for-each-ref` loop, the command compares `arc_by_name` keys against the `local_branches` set to find orphan entries. Their authors are fetched in a single `git log --no-walk` call, with `(gc)` as a fallback for pruned commits. These rows are appended to the same `rows` array and go through the same sort and print path.
-3. A **REMOTE** column (when the refs backend is active) — loaded once from `refs/arx-remote/origin/*` into `remote_sha_by_branch[branch]=sha` before the print loop. Each row is classified as `pushed` (remote SHA matches archive SHA), `ahead` (remote SHA differs), `local` (no tracking ref), or `-` (branch not in archive). The `-` case applies to `Not archived` rows where there is no archive entry to compare against.
+3. A **REMOTE** column (when the refs backend is active) — loaded once from `refs/arx-remote/origin/*` into `remote_sha_by_branch[branch]=sha` before the print loop. Each row is classified as `pushed` (remote SHA matches archive SHA), `ahead` (remote SHA differs), `local` (no tracking ref), `remote` (not in local archive but remote tracking ref exists — branch was removed locally but not yet deleted from remote), or `-` (not in archive and no remote tracking ref).
 
 `arx status` accepts `--sort=name|date` and `--order=asc|desc`. The default sort is `name`; the default order depends on the sort key — `asc` for name, `desc` for date — unless overridden explicitly. When sorting by date, name is used as a tiebreaker. Rows are collected first, then sorted as a post-processing step before printing. `arx list` uses the same sort/order logic.
 
-**Color output.** Both `arx status` and `arx list` emit ANSI color codes only when stdout is a terminal (`[[ -t 1 ]]`). Piped or redirected output is always plain text. `arx status` colors the STATUS column: red (`Not archived`), green (`Archived`), light blue / bright cyan (`Archived as "..."`), yellow (`Conflict`), dim (`Local only`). Both commands color the REMOTE column: green (`pushed`), yellow (`ahead`), red (`local`), dim (`-`).
+**Color output.** Both `arx status` and `arx list` emit ANSI color codes only when stdout is a terminal (`[[ -t 1 ]]`). Piped or redirected output is always plain text. `arx status` colors the STATUS column: red (`Not archived`), green (`Archived`), light blue / bright cyan (`Archived as "..."`), yellow (`Conflict`), dim (`Local only`). Both commands color the REMOTE column: green (`pushed`), yellow (`ahead`), red (`local`), cyan (`remote`), dim (`-`).
 
 **`printf` byte-vs-character width.** `printf %-Ns` pads a field to N *bytes*, not N display columns. Author names containing multibyte UTF-8 characters (e.g. `ć`, `ž`) are longer in bytes than in characters, so subsequent columns shift left for those rows. `arx status` corrects for this before printing each row: it measures the string in both character count (`${#s}` with the active locale) and byte count (`${#s}` with `LC_ALL=C`), then widens the format field by the difference. The same correction is applied to the STATUS column when the REMOTE column is present — ANSI color codes add invisible bytes to the colored STATUS string, which would otherwise throw off its fixed-width padding.
 
