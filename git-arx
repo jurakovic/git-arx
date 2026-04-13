@@ -1181,8 +1181,9 @@ COMMANDS
   add <branch> [archive-name] [--force]  Archive a single branch
   remove|rm <branch>                     Remove a branch from the archive
   rename|mv <old> <new>                  Rename an archived branch
-  status [--sort=name|date]              Show local branches with deleted remote
-         [--order=asc|desc]              (--all also shows never-pushed branches)
+  status [-a|--all]                      Show local branches with deleted remote
+         [--sort=name|date]              (--all also shows never-pushed branches)
+         [--order=asc|desc]
   update [-f|--force] [-n|--dry-run]     Archive local branches with deleted remote
   list|ls [--sort=name|date]             List archived branches
        [--order=asc|desc]
@@ -1233,6 +1234,9 @@ EXAMPLES
   git arx checkout feature/my-feature
   git arx sync --dry-run
   git arx push
+  git arx push --delete feature/my-feature
+  git arx push --prune
+  git arx pull
 
 EOF
 }
@@ -1245,6 +1249,7 @@ main() {
 
     case "$cmd" in
         --version|-v) printf 'git-arx %s\n' "$VERSION"; return 0 ;;
+        help|-h)      cmd_help; return 0 ;;
     esac
 
     _arx_require_git
