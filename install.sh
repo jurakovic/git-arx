@@ -38,9 +38,8 @@ fi
 
 # Determine commit hash for version stamp
 if [[ -n "$TMPFILE" ]]; then
-    # Remote install: query GitHub API for latest commit on master
-    COMMIT=$(curl -fsSL "https://api.github.com/repos/jurakovic/git-arx/commits/master" \
-        | grep -m1 '"sha"' | grep -o '[0-9a-f]\{40\}' | cut -c1-7) || COMMIT="dev"
+    # Remote install: use git ls-remote to get the latest commit on master
+    COMMIT=$(git ls-remote https://github.com/jurakovic/git-arx.git refs/heads/master 2>/dev/null | cut -f1 | cut -c1-7) || COMMIT="dev"
 else
     # Local install: read from the git repo alongside this script
     COMMIT=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null) || COMMIT="dev"
