@@ -584,7 +584,9 @@ cmd_status() {
             sw=$(( 30 + scb - sc ))
             local arc_sha_full="${arc_by_name[$b]:-}"
             local r_sha="${remote_sha_by_branch[$b]:-}"
-            if [[ -z "$arc_sha_full" ]]; then
+            if [[ -z "$arc_sha_full" && -n "$r_sha" ]]; then
+                remote_st="${C_CYAN}remote${C_RESET}"
+            elif [[ -z "$arc_sha_full" ]]; then
                 remote_st="${C_DIM}-${C_RESET}"
             elif [[ -z "$r_sha" ]]; then
                 remote_st="${C_RED}local${C_RESET}"
