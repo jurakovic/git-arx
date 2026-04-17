@@ -1167,6 +1167,57 @@ cmd_pull() {
     fi
 }
 
+cmd_upgrade() {
+    local yes=0
+    for arg in "$@"; do
+        case "$arg" in
+            -y|--yes) yes=1 ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+        esac
+    done
+
+    if [[ "$VERSION" == "dev" ]]; then
+        printf 'git-arx: running from source (version: dev) – upgrade not applicable\n' >&2
+        exit 1
+    fi
+
+    printf 'Checking for updates...\n'
+    local latest
+    latest=$(git ls-remote https://github.com/jurakovic/git-arx.git refs/heads/master 2>/dev/null | cut -f1 | cut -c1-7) || true
+    if [[ -z "$latest" ]]; then
+        printf 'git-arx: failed to fetch latest version (check your network connection)\n' >&2
+        exit 1
+    fi
+
+    if [[ "$VERSION" == "$latest" ]]; then
+        printf 'Already up to date (%s).\n' "$VERSION"
+        return 0
+    fi
+
+    printf 'Current: %s\n' "$VERSION"
+    printf 'Latest:  %s\n' "$latest"
+    printf '\n'
+
+    if [[ $yes -eq 0 ]]; then
+        printf 'Install latest version? [y/N] '
+        local answer
+        read -r answer || true
+        if [[ "$answer" != "y" && "$answer" != "Y" ]]; then
+            printf 'Aborted.\n'
+            exit 1
+        fi
+    fi
+
+    local self install_dir
+    self=$(command -v git-arx 2>/dev/null || true)
+    if [[ -n "$self" ]]; then
+        install_dir=$(dirname "$self")
+        curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/heads/master/install.sh | bash -s -- "$install_dir"
+    else
+        curl -fsSL https://raw.githubusercontent.com/jurakovic/git-arx/refs/heads/master/install.sh | bash
+    fi
+}
+
 cmd_help() {
     cat <<EOF
 git-arx – Branch Archive Tool for Git (version: $VERSION)
@@ -1201,6 +1252,7 @@ COMMANDS
   sync [-n|--dry-run]                    Reconcile file and refs backends  [file+refs]
        [--force-file]
        [--force-refs]
+  upgrade [-y]                           Upgrade git-arx to the latest version
   help                                   Show this help
   --version, -v                          Show version
 
@@ -1250,6 +1302,7 @@ main() {
     case "$cmd" in
         --version|-v) printf 'git-arx %s\n' "$VERSION"; return 0 ;;
         help|-h)      cmd_help; return 0 ;;
+        upgrade)      cmd_upgrade "$@"; return 0 ;;
     esac
 
     _arx_require_git
@@ -1270,6 +1323,7 @@ main() {
         fetch)    cmd_fetch "$@" ;;
         pull)     cmd_pull "$@" ;;
         sync)     cmd_sync "$@" ;;
+        upgrade)  cmd_upgrade "$@" ;;
         help|-h)  cmd_help ;;
         "")       cmd_help; exit 1 ;;
         *)

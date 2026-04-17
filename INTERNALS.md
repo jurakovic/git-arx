@@ -487,9 +487,15 @@ The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via
 - **Local install** (`bash install.sh`): `install.sh` reads the short commit hash from the repo alongside it via `git rev-parse --short HEAD` and writes it into the installed file using `sed`.
 - **Remote install** (`curl ... | bash`): `install.sh` queries the GitHub API for the latest commit on `master` and writes that hash into the installed file.
 
-After install, `git arx --version` reports the short commit hash that was current at install time (e.g. `git-arx abc1234`). To check whether the installed version is up to date, compare against the latest commit on `master` in the repository.
+After install, `git arx --version` reports the short commit hash that was current at install time (e.g. `git-arx abc1234`). To check whether the installed version is up to date, run `git arx upgrade`.
 
-`VERSION="dev"` in the source is intentional — it is never manually edited. Do not commit a real hash into the source file.
+**How `upgrade` works:**
+
+`cmd_upgrade` uses `git ls-remote` (the same mechanism as `install.sh` remote install) to fetch the latest commit hash on `master` without cloning the repo. It compares the 7-character prefix of that hash against `$VERSION`. If they differ, the user is prompted to confirm (or `-y` skips the prompt). On confirmation, `install.sh` is downloaded via `curl` and executed with the install directory derived from `command -v git-arx`, so the updated file lands in the same location as the running binary.
+
+`cmd_upgrade` does not call `_arx_require_git` and is dispatched in `main()` before that check, so it works from any directory — not just inside a git repo.
+
+`VERSION="dev"` in the source is intentional — it is never manually edited. Do not commit a real hash into the source file. Running `upgrade` when `VERSION="dev"` exits with an error.
 
 ---
 

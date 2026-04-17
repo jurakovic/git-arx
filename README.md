@@ -569,6 +569,39 @@ Requires both `arx.storerefs` and `arx.storefile` to be enabled.
 
 ---
 
+### `git arx upgrade`
+
+Check whether a newer version of `git-arx` is available and optionally install it. Compares the installed version (a short commit hash) against the latest commit on `master` and, if they differ, prompts before installing.
+
+```bash
+git arx upgrade
+# Checking for updates...
+# Current: abc1234
+# Latest:  def5678
+#
+# Install latest version? [y/N]
+```
+
+Use `-y` to skip the confirmation prompt and install automatically:
+
+```bash
+git arx upgrade -y
+```
+
+If the installed version is already current:
+
+```bash
+git arx upgrade
+# Checking for updates...
+# Already up to date (abc1234).
+```
+
+The command detects the current install directory from the running binary and re-runs `install.sh` there, so the upgraded file lands in the same location. Not applicable when running from source (`VERSION="dev"`).
+
+> **Note:** `git arx update` archives your branches. `git arx upgrade` upgrades the tool itself.
+
+---
+
 Run `git arx help` (or `-h`) to print the built-in usage summary at any time.
 
 ---
