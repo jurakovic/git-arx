@@ -12,6 +12,7 @@
 - [Compatibility](#compatibility)
 - [Commands](#commands)
 - [Storage Backends](#storage-backends)
+  - [Clone size](#clone-size)
 - [Configuration](#configuration)
 - [Workflows](#workflows)
 - [Shell Completion](#shell-completion)
@@ -657,6 +658,12 @@ git config arx.storefile true
 ```
 
 With both enabled, writes go to both backends; reads prefer refs and supplement with any file-only entries. The `git arx sync` command reconciles the two if they drift.
+
+### Clone size
+
+Archiving a branch preserves all of its objects. Because `refs/arx/*` is outside the default clone refspec (`refs/heads/*`, `refs/tags/*`), a regular `git clone` will not transfer those objects — they stay on the remote until explicitly fetched with `git arx pull`. A mirror clone (`git clone --mirror`), which fetches all refs, will include them.
+
+If reducing remote storage is the goal, delete the branch without archiving it. The objects will become unreachable and the hosting provider can prune them during the next GC run.
 
 ---
 
