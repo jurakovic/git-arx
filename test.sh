@@ -897,6 +897,15 @@ test_push_pull() {
         fail "pull (both): should sync to .gitarchive"
     fi
 
+    # pull (both): file-only entries must survive the sync
+    printf 'file-only-entry %s 2025-01-01T00:00:00+00:00\n' "$SHA_GAMMA" >> .gitarchive
+    "$ARX" pull > /dev/null 2>&1 || true
+    if grep -qF "file-only-entry" .gitarchive && grep -qF "feature/alpha" .gitarchive; then
+        pass "pull (both): preserves file-only entries"
+    else
+        fail "pull (both): should preserve file-only entries"
+    fi
+
     cd "$REPO"
     set_storage refs
 

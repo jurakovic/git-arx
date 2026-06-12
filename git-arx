@@ -113,6 +113,44 @@ _arx_file_write() {
     mv "$tmpfile" "$archive"
 }
 
+_arx_file_write_bulk() {
+    # Read "branch sha date" records from stdin and write them all in one
+    # filter-then-append pass – a single file rewrite instead of one per entry.
+    local archive tmpfile line branch sha date rest
+    archive=$(_arx_config_file)
+
+    local -a entries=()
+    declare -A incoming=()
+    while IFS=' ' read -r branch sha date rest; do
+        [[ -z "$branch" ]] && continue
+        entries+=("$branch $sha $date")
+        incoming["$branch"]=1
+    done
+
+    # No input – leave the file untouched (matches per-entry write semantics)
+    [[ ${#entries[@]} -eq 0 ]] && return 0
+
+    tmpfile="${archive}.tmp.$$"
+    : > "$tmpfile"
+    if [[ -f "$archive" ]]; then
+        # Keep comments, blanks, and entries not being overwritten
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" == \#* || -z "$line" ]]; then
+                printf '%s\n' "$line" >> "$tmpfile"
+            elif [[ -z "${incoming[${line%% *}]+x}" ]]; then
+                printf '%s\n' "$line" >> "$tmpfile"
+            fi
+        done < "$archive"
+    else
+        printf '# git-arx archive – do not edit manually\n' >> "$tmpfile"
+    fi
+    printf '%s\n' "${entries[@]}" >> "$tmpfile"
+
+    # MINGW64-safe atomic replace
+    [[ -f "$archive" ]] && rm -f "$archive"
+    mv "$tmpfile" "$archive"
+}
+
 _arx_file_delete() {
     local branch="$1"
     local archive tmpfile
@@ -1170,10 +1208,7 @@ cmd_pull() {
     local use_file
     use_file=$(_arx_config_storefile)
     if [[ "$use_file" == "true" ]]; then
-        local branch sha date
-        while IFS=' ' read -r branch sha date rest; do
-            _arx_file_write "$branch" "$sha" "$date"
-        done < <(_arx_refs_read)
+        _arx_refs_read | _arx_file_write_bulk
         printf 'Synced fetched refs to .gitarchive\n'
     fi
 }

@@ -259,6 +259,8 @@ git fetch --prune origin '+refs/arx/*:refs/arx-remote/origin/*'
 # then: git update-ref refs/arx/<branch> <sha>  for each tracking ref
 ```
 
+When the file backend is also enabled, `pull` syncs all fetched entries to `.gitarchive` via `_arx_file_write_bulk` — one filter-then-append rewrite for the whole batch instead of one full file rewrite per entry (which would be O(n²)). File-only entries are preserved, matching the per-entry write semantics.
+
 `arx fetch` is a read-only preview of what `arx pull` would bring in. It uses `git ls-remote` to query the remote ref list without downloading any objects, then compares against local `refs/arx/*`:
 
 - `new` — on the remote, not locally; pull would add it
