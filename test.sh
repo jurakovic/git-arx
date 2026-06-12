@@ -1275,6 +1275,24 @@ test_error_cases() {
     set_storage file
 }
 
+test_overwrite_guard() {
+    section "self-overwrite guard"
+
+    # The script must never execute bytes past the final { main; exit; } line –
+    # that's what `upgrade` overwriting the running file would leave behind.
+    local guarded="$TMPROOT/arx-guard-copy"
+    cp "$ARX" "$guarded"
+    printf 'echo GUARD-FAIL\n' >> "$guarded"
+    local out
+    out=$(bash "$guarded" --version 2>&1)
+    if ! printf '%s' "$out" | grep -qF "GUARD-FAIL"; then
+        pass "guard: bytes after main are never executed"
+    else
+        fail "guard: bytes after main should never execute"
+        printf '      got: %s\n' "$out"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1309,6 +1327,7 @@ main() {
     test_double_add
     test_config_bool
     test_error_cases
+    test_overwrite_guard
 
     teardown
 

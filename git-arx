@@ -1386,4 +1386,9 @@ main() {
     esac
 }
 
-main "$@"
+# Braces force bash to parse this entire block (through the exit) before
+# executing it, and exit ends the process without reading the file again.
+# Without this, `upgrade` overwriting the running script mid-execution makes
+# bash resume reading the replaced file at a stale byte offset and parse
+# whatever bytes it lands on.
+{ main "$@"; exit; }

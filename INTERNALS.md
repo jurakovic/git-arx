@@ -474,6 +474,7 @@ test_remove        git arx remove
 test_rename        git arx rename
 test_list          git arx list (sorting, --author, --storage filter)
 test_update        git arx update (--dry-run, --force, conflicts, already-safe)
+test_sort_tiebreak name tiebreak when sorting by date
 test_log           git arx log (passthrough flags)
 test_checkout      git arx checkout (restore, gc'd commit)
 test_prune         git arx prune (--dry-run, --force, current branch skipped)
@@ -484,7 +485,9 @@ test_push_pull     git arx push / fetch / pull (requires a bare remote)
 test_sync          git arx sync (--dry-run, --force-file, --force-refs)
 test_slashed_branches  branch names with slashes
 test_double_add    idempotency of add
+test_config_bool   git boolean spellings (yes/on/1/...) for storage flags
 test_error_cases   unknown commands, missing args, bad config
+test_overwrite_guard   bytes past the final { main; exit; } are never executed
 ```
 
 Each section uses `assert_ok`, `assert_fails`, and `assert_out` helpers. `assert_out` greps the combined stdout+stderr for a fixed string – tests are intentionally coarse-grained (output substring match) rather than exact, so minor wording changes in messages don't break the suite.
@@ -542,6 +545,8 @@ After install, `git arx --version` reports the short commit hash that was curren
 `cmd_upgrade` uses `git ls-remote` (the same mechanism as `install.sh` remote install) to fetch the latest commit hash on `master` without cloning the repo. It compares the 7-character prefix of that hash against `$VERSION`. If they differ, the user is prompted to confirm (or `-y` skips the prompt). On confirmation, `install.sh` is downloaded via `curl` and executed with the install directory derived from `command -v git-arx`, so the updated file lands in the same location as the running binary.
 
 `cmd_upgrade` does not call `_arx_require_git` and is dispatched in `main()` before that check, so it works from any directory — not just inside a git repo.
+
+**Self-overwrite guard.** `upgrade` overwrites the very script bash is executing. Bash reads scripts lazily: functions are parsed in full before they run, but after the last top-level command finishes, bash returns to the file to look for more input — at its saved byte offset, which now points into the middle of the replaced (differently sized) file, and it will try to execute whatever bytes it lands on. That is why the script's last line is `{ main "$@"; exit; }` rather than a bare `main "$@"`: the braces force the whole block to be parsed up front, and the `exit` ends the process without ever reading the file again. `test_overwrite_guard` in the test suite asserts that bytes appended after this line are never executed.
 
 `VERSION="dev"` in the source is intentional — it is never manually edited. Do not commit a real hash into the source file. Running `upgrade` when `VERSION="dev"` exits with an error.
 
