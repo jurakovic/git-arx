@@ -819,6 +819,7 @@ test_push_pull() {
     cd "$repo2"
     git config user.email "test@example.com"
     git config user.name "Test"
+    git config fetch.prune false  # don't let machine-global config mask the explicit --prune in arx pull
     set_storage refs
 
     assert_out "fetch: shows new in fresh clone" "new" "$ARX" fetch
@@ -874,6 +875,33 @@ test_push_pull() {
     fi
     assert_ok "push --prune: --dry-run succeeds" "$ARX" push --prune --dry-run
 
+    # pull after remote force-push: non-fast-forward tracking update must succeed
+    local sha_initial
+    sha_initial=$(git rev-parse "refs/heads/$DEFAULT_BRANCH")
+    git update-ref refs/arx/feature/alpha "$sha_initial"  # ancestor of SHA_ALPHA → non-FF
+    "$ARX" push --force > /dev/null
+    cd "$repo2"
+    set_storage refs
+    assert_ok "pull: succeeds after remote force-push" "$ARX" pull
+    local pulled
+    pulled=$(git rev-parse refs/arx/feature/alpha 2>/dev/null || true)
+    if [[ "$pulled" == "$sha_initial" ]]; then
+        pass "pull: local ref updated to force-pushed SHA"
+    else
+        fail "pull: local ref should be at force-pushed SHA (got ${pulled:0:8}, want ${sha_initial:0:8})"
+    fi
+
+    # pull prunes tracking refs for refs deleted on the remote
+    # (feature/beta was removed from the remote by push --prune above,
+    # but repo2 still has its tracking ref from the earlier pull)
+    if ! git rev-parse --verify refs/arx-remote/origin/feature/beta > /dev/null 2>&1; then
+        pass "pull: prunes tracking ref for remotely deleted ref"
+    else
+        fail "pull: tracking ref for remotely deleted ref should be pruned"
+    fi
+
+    cd "$REPO"
+    git update-ref refs/arx/feature/alpha "$SHA_ALPHA"  # restore
     set_storage file
 }
 

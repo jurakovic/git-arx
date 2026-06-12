@@ -1149,8 +1149,10 @@ cmd_pull() {
     local refsprefix remote_prefix
     refsprefix=$(_arx_config_refsprefix)
     remote_prefix=$(_arx_config_remote_tracking_prefix)
-    # Fetch remote arx refs into the tracking namespace, then sync to local refs
-    git fetch origin "${refsprefix}*:${remote_prefix}*"
+    # Fetch remote arx refs into the tracking namespace, then sync to local refs.
+    # '+' allows non-fast-forward updates (after arx push --force on another
+    # machine); --prune drops tracking refs whose remote counterpart is gone.
+    git fetch --prune origin "+${refsprefix}*:${remote_prefix}*"
     while IFS=' ' read -r refname sha _rest; do
         git update-ref "${refsprefix}${refname#"$remote_prefix"}" "$sha"
     done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix")

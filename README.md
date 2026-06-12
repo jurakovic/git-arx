@@ -515,7 +515,7 @@ Requires `arx.storerefs` to be enabled.
 
 ### `git arx pull`
 
-Fetch archived refs from the remote. Remote-tracking refs are updated so that `git arx list` and `git arx status --all` reflect the current remote state. If `arx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
+Fetch archived refs from the remote. Remote-tracking refs are updated so that `git arx list` and `git arx status --all` reflect the current remote state — including refs force-pushed from another machine (`git arx push --force`) and refs deleted on the remote, whose tracking refs are pruned. Local archive entries themselves are never deleted by `pull`. If `arx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
 
 ```bash
 git arx pull
