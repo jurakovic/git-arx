@@ -19,6 +19,7 @@ For end-user documentation, see [README.md](README.md).
 - [Command Notes](#command-notes)
 - [Shell Completion](#shell-completion)
 - [Testing](#testing)
+- [Benchmarking](#benchmarking)
 - [Versioning](#versioning)
 - [Known Limitations](#known-limitations)
 
@@ -49,6 +50,7 @@ install.sh                 Installs git-arx to PATH and sets the git alias
 uninstall.sh               Removes installed files and the git alias
 git-arx-completion.bash    Bash tab completion script
 test.sh                    Test suite
+bench.sh                   Performance benchmark (see Benchmarking)
 README.md                  End-user documentation
 INTERNALS.md               This file
 LICENSE                    MIT License
@@ -492,6 +494,35 @@ Each section uses `assert_ok`, `assert_fails`, and `assert_out` helpers. `assert
 Each test section resets the archive state via `reset_archive()` before running. This deletes `.gitarchive` and removes all `refs/arx/` refs, then resets storage to `file`-only. Branches deleted during a test are recreated by `recreate_branches()` where needed.
 
 The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via a `trap ... EXIT` at the end of the run.
+
+---
+
+## Benchmarking
+
+`bench.sh` times the subprocess-heavy commands (`status`, `status --all`, `update`, `list`, `prune --dry-run`) against a synthetic repository with many branches – each at a distinct commit (`update` dedups identical SHAs), each simulating a deleted remote (upstream configured, tracking ref absent). Like the test suite, it runs in a `mktemp -d` directory and cleans up after itself.
+
+```bash
+bash bench.sh                  # time the working-tree git-arx
+bash bench.sh <rev>            # compare <rev> against the working tree
+bash bench.sh <rev-a> <rev-b>  # compare two versions
+N=200 bash bench.sh            # override the branch count (default: 80)
+```
+
+Arguments may be git revisions (`git-arx` is extracted from them via `git show`) or paths to `git-arx` executables, so an installed copy can be compared directly: `bash bench.sh ~/bin/git-arx`.
+
+**When to run it:** when a change touches the branch loops in `update`, `status`, or `prune`, or adds a subprocess call anywhere reachable from them – not on a schedule. The failure mode it guards against is a subprocess inside a per-branch loop, which shows up as times scaling with N instead of staying flat.
+
+**Times are not tracked over time.** Absolute numbers depend on machine, filesystem, and platform (process spawning on Windows/MINGW64 is an order of magnitude slower than on Linux, which is exactly why the bulk patterns matter there most). For reference, the one-time snapshot that motivated the bulk-operation work (N=80, Windows 11 / MINGW64, `3e11639` vs `85738a4`):
+
+| Command | Before | After | |
+|---|---|---|---|
+| `status` | 5.4 s | 1.8 s | 3× |
+| `status --all` | 5.8 s | 2.5 s | 2.4× |
+| `update` (archiving 80) | 23.4 s | 1.1 s | 22× |
+| `list` | 0.8 s | 0.7 s | – (already bulk) |
+| `prune --dry-run` | 4.2 s | 0.7 s | 6× |
+
+The ratios are the signal; the absolute numbers are not.
 
 ---
 
