@@ -1369,8 +1369,6 @@ main() {
         fetch)    cmd_fetch "$@" ;;
         pull)     cmd_pull "$@" ;;
         sync)     cmd_sync "$@" ;;
-        upgrade)  cmd_upgrade "$@" ;;
-        help|-h)  cmd_help ;;
         "")       cmd_help; exit 1 ;;
         *)
             printf 'git-arx: unknown command "%s"\n' "$cmd" >&2
