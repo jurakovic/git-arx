@@ -860,6 +860,32 @@ test_both_backend() {
         fail "both: should delete from refs"
     fi
 
+    # update flushes all entries in one bulk write per backend – verify the
+    # batch lands in both the file and refs/arx/*
+    local b sha
+    for b in feature/beta fix/gamma; do
+        sha=$(git rev-parse "refs/heads/$b")
+        git update-ref "refs/remotes/origin/$b" "$sha"
+        git branch --set-upstream-to="origin/$b" "$b" 2>/dev/null
+        git update-ref -d "refs/remotes/origin/$b"
+    done
+    "$ARX" update > /dev/null
+    if grep -qF "feature/beta" .gitarchive 2>/dev/null \
+        && grep -qF "fix/gamma" .gitarchive 2>/dev/null; then
+        pass "both: update bulk-writes all branches to file"
+    else
+        fail "both: update should write all branches to file"
+    fi
+    if git rev-parse --verify refs/arx/feature/beta > /dev/null 2>&1 \
+        && git rev-parse --verify refs/arx/fix/gamma > /dev/null 2>&1; then
+        pass "both: update bulk-writes all branches to refs"
+    else
+        fail "both: update should write all branches to refs"
+    fi
+    for b in feature/beta fix/gamma; do
+        git branch --unset-upstream "$b" 2>/dev/null || true
+    done
+
     set_storage file
 }
 

@@ -169,6 +169,17 @@ _arx_refs_write() {
     git update-ref "${ARX_REFSPREFIX}${branch}" "$sha"
 }
 
+_arx_refs_write_bulk() {
+    # Read "branch sha date" records from stdin and update all refs in one
+    # atomic `git update-ref --stdin` transaction – a single subprocess
+    # instead of one per entry. If any ref update fails, none are written.
+    local branch sha rest
+    while IFS=' ' read -r branch sha rest; do
+        [[ -z "$branch" ]] && continue
+        printf 'update %s %s\n' "${ARX_REFSPREFIX}${branch}" "$sha"
+    done | git update-ref --stdin
+}
+
 _arx_refs_delete() {
     local branch="$1"
     git update-ref -d "${ARX_REFSPREFIX}${branch}" 2>/dev/null || true
@@ -206,6 +217,24 @@ _arx_write() {
     fi
     if [[ "$ARX_STOREREFS" == "true" ]]; then
         _arx_refs_write "$branch" "$sha"
+    fi
+}
+
+_arx_write_bulk() {
+    # Read "branch sha date" records from stdin and write them to all enabled
+    # backends, one bulk pass per backend (file first – same order as _arx_write).
+    local -a records=()
+    local line
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        records+=("$line")
+    done
+    [[ ${#records[@]} -eq 0 ]] && return 0
+    if [[ "$ARX_STOREFILE" == "true" ]]; then
+        printf '%s\n' "${records[@]}" | _arx_file_write_bulk
+    fi
+    if [[ "$ARX_STOREREFS" == "true" ]]; then
+        printf '%s\n' "${records[@]}" | _arx_refs_write_bulk
     fi
 }
 
@@ -379,6 +408,7 @@ cmd_update() {
     done < <(git for-each-ref --format='%(refname)' refs/heads/ refs/remotes/)
 
     local archived=0 conflicts=0 already_safe=0
+    local -a pending=()
     while IFS=$'\t' read -r branch sha date upstream_ref; do
         # Skip never-pushed branches (no upstream configured); only archive remote-deleted ones
         if [[ -z "$upstream_ref" ]]; then
@@ -407,7 +437,7 @@ cmd_update() {
                 fi
                 continue
             fi
-            [[ $dry_run -eq 0 ]] && _arx_write "$branch" "$sha" "$date"
+            pending+=("$branch $sha $date")
             arc_by_name[$branch]="$sha"
             arc_by_sha[$sha]="$branch"
             printf 'Updated: %s at %s\n' "$branch" "${sha:0:8}"
@@ -422,7 +452,7 @@ cmd_update() {
             continue
         fi
 
-        [[ $dry_run -eq 0 ]] && _arx_write "$branch" "$sha" "$date"
+        pending+=("$branch $sha $date")
         arc_by_name[$branch]="$sha"
         arc_by_sha[$sha]="$branch"
         printf 'Archived: %s\n' "$branch"
@@ -430,6 +460,13 @@ cmd_update() {
     done < <(git for-each-ref \
         --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(upstream)' \
         refs/heads/)
+
+    # Flush all writes at once: one .gitarchive rewrite and one atomic
+    # update-ref transaction instead of a full file rewrite and a subprocess
+    # per branch.
+    if [[ $dry_run -eq 0 && ${#pending[@]} -gt 0 ]]; then
+        printf '%s\n' "${pending[@]}" | _arx_write_bulk
+    fi
 
     printf 'Done. Archived %d branch(es)' "$archived"
     [[ $already_safe -gt 0 ]] && printf ', %d already safe (SHA archived under different name)' "$already_safe" || true

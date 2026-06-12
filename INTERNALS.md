@@ -146,6 +146,10 @@ Refs are treated as primary in the union merge. This reflects the refs backend's
 
 Writes to all enabled backends. When both are enabled, writes to file first, then refs. Order doesn't matter for correctness; file first means a crash between the two writes leaves the more portable copy updated.
 
+### `_arx_write_bulk()`
+
+Reads `branch sha date` records from stdin and writes them to all enabled backends in one bulk pass per backend (file first, same order as `_arx_write`): `_arx_file_write_bulk` does a single filter-then-append rewrite of `.gitarchive`, and `_arx_refs_write_bulk` updates all refs in a single atomic `git update-ref --stdin` transaction. The transaction is all-or-nothing – if any ref update fails (e.g. a directory/file ref-name conflict), none of the refs are written. Used by `update` to flush all archive writes at once.
+
 ### `_arx_delete(branch)`
 
 Removes from all enabled backends. When both are enabled, removes from file first, then refs.
@@ -330,6 +334,8 @@ git for-each-ref \
 ```
 
 3. **Upstream existence as a set lookup** – before the branch loop, all refs an upstream could point to are loaded into an `existing_refs` associative array with one `git for-each-ref --format='%(refname)' refs/heads/ refs/remotes/` call. The per-branch "does the upstream ref still exist" check is then a bash hash lookup instead of a `git rev-parse --verify` subprocess per branch — previously the dominant cost on repos with many tracked branches, even when there was nothing to archive.
+
+**`arx update` batches its writes.** Branches to archive are collected into a `pending` array during the loop and flushed once at the end through `_arx_write_bulk` – one `.gitarchive` rewrite instead of a full rewrite per branch (which would be O(n²)), and one atomic `git update-ref --stdin` transaction instead of one subprocess per ref. Per-branch messages are printed as branches are classified, before the flush; if the flush fails, the exit status is non-zero even though `Archived:` lines were already shown.
 
 `arx update` also keeps the in-memory maps current after processing each branch – `arc_by_name` and `arc_by_sha` are updated regardless of `--dry-run` – so the simulation is accurate, and subsequent branches see the correct in-memory state whether or not writes are actually happening.
 
