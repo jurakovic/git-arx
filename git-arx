@@ -1007,11 +1007,19 @@ cmd_prune() {
     local current_branch
     current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || true)
 
+    # Load all local branches once – the per-entry existence check is then a
+    # hash lookup instead of a `git rev-parse --verify` subprocess.
+    declare -A local_branches
+    local ref
+    while IFS= read -r ref; do
+        local_branches["${ref#refs/heads/}"]=1
+    done < <(git for-each-ref --format='%(refname)' refs/heads/)
+
     # Collect archived branches that still exist locally
     local -a branches=()
     local -a skipped=()
     while IFS=' ' read -r branch sha date rest; do
-        if ! git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
+        if [[ -z "${local_branches[$branch]:-}" ]]; then
             continue  # already deleted locally
         fi
         if [[ "$branch" == "$current_branch" ]]; then
@@ -1065,12 +1073,10 @@ cmd_prune() {
         fi
     fi
 
-    local deleted=0
-    for b in "${branches[@]}"; do
-        git branch -D "$b"
-        deleted=$(( deleted + 1 ))
-    done
-    printf 'Done. Deleted %d branch(es).\n' "$deleted"
+    # One git branch -D call for the whole batch – git itself prints the
+    # per-branch "Deleted branch ... (was ...)." lines.
+    git branch -D "${branches[@]}"
+    printf 'Done. Deleted %d branch(es).\n' "${#branches[@]}"
 }
 
 cmd_push() {

@@ -698,6 +698,13 @@ test_prune() {
         fail "prune: deletes archived branches with --force"
         printf '      got: %s\n' "$out"
     fi
+    if printf '%s' "$out" | grep -qF "Deleted branch feature/alpha" \
+        && printf '%s' "$out" | grep -qF "Deleted branch feature/beta"; then
+        pass "prune: prints per-branch deleted lines"
+    else
+        fail "prune: should print per-branch deleted lines"
+        printf '      got: %s\n' "$out"
+    fi
     if ! git rev-parse --verify refs/heads/feature/alpha > /dev/null 2>&1; then
         pass "prune: feature/alpha is deleted locally"
     else

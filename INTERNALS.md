@@ -397,6 +397,8 @@ fi
 
 Finds all archived branches that still exist as local branches, then deletes them.
 
+Both halves are bulk operations: local branches are loaded once into a `local_branches` set with a single `git for-each-ref refs/heads/` call (the per-archive-entry existence check is a hash lookup, not a `git rev-parse --verify` subprocess), and the deletion is a single `git branch -D b1 b2 ...` call for the whole batch – git itself prints the per-branch `Deleted branch ... (was ...).` lines.
+
 Key behaviors:
 - The currently checked-out branch is always skipped (git would reject the deletion anyway). It is listed separately in the output with a "Skipped (currently checked out)" notice.
 - Without `--force`, the full list is printed and the user must type `"yes"` to proceed. This is intentional – `git branch -D` is irreversible from git's perspective (the archive is the only recovery path).
