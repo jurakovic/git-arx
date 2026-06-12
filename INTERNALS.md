@@ -281,12 +281,14 @@ This is also how fully automatic remote sync is possible without `git arx push/p
 Both commands use `%(upstream)` from `git for-each-ref` to classify local branches:
 
 - **Empty `%(upstream)`** — no upstream ever configured: the branch was never pushed ("local only").
-- **Non-empty `%(upstream)`, `git rev-parse --verify` fails** — upstream was configured but the tracking ref no longer exists locally: the remote branch was deleted (after `git fetch --prune` or manual pruning).
-- **Non-empty `%(upstream)`, `git rev-parse --verify` succeeds** — tracking ref exists: live remote branch, skip.
+- **Non-empty `%(upstream)`, ref does not exist locally** — upstream was configured but the tracking ref no longer exists: the remote branch was deleted (after `git fetch --prune` or manual pruning).
+- **Non-empty `%(upstream)`, ref exists** — live remote branch, skip.
+
+The existence check is a lookup in an `existing_refs` set preloaded from a single `git for-each-ref refs/heads/ refs/remotes/` call (see Performance section) — `refs/remotes/` for normal remote-tracking upstreams, `refs/heads/` because an upstream can also be a local branch (`branch.<name>.remote = .`, e.g. after `git branch --track a b`).
 
 This approach is more robust than checking `%(upstream:track)` for the string `[gone]` because:
 - `[gone]` can vary by git version or locale
-- The ref-existence check is a direct, binary fact about the object store
+- The ref-existence check is a direct, binary fact about the ref store
 
 Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/origin/branch`) but does **not** clear `branch.<name>.remote` or `branch.<name>.merge` from `.git/config`. So `%(upstream)` still outputs the full ref path for pruned branches. Checking whether that ref resolves handles both the "never had a remote" and "remote was deleted" cases.
 
@@ -309,7 +311,7 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 For repos with many branches or archived entries, naive per-branch subprocess calls add up to tens of seconds. Three commands use bulk operations to avoid this.
 
-**`arx update` and `arx status`** share the same two optimisations:
+**`arx update` and `arx status`** share the same three optimisations:
 
 1. **Archive loaded once** – `_arx_read_all` is called once before the branch loop and its output is stored in two in-memory associative arrays: `arc_by_name[branch]=sha` and `arc_by_sha[sha]=name`. All per-branch archive lookups are then O(1) bash hash table reads instead of O(n) subprocess calls.
 
@@ -326,6 +328,8 @@ git for-each-ref \
     --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(upstream)' \
     refs/heads/
 ```
+
+3. **Upstream existence as a set lookup** – before the branch loop, all refs an upstream could point to are loaded into an `existing_refs` associative array with one `git for-each-ref --format='%(refname)' refs/heads/ refs/remotes/` call. The per-branch "does the upstream ref still exist" check is then a bash hash lookup instead of a `git rev-parse --verify` subprocess per branch — previously the dominant cost on repos with many tracked branches, even when there was nothing to archive.
 
 `arx update` also keeps the in-memory maps current after processing each branch – `arc_by_name` and `arc_by_sha` are updated regardless of `--dry-run` – so the simulation is accurate, and subsequent branches see the correct in-memory state whether or not writes are actually happening.
 

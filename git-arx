@@ -370,6 +370,14 @@ cmd_update() {
         [[ -z "${arc_by_sha[$sha]:-}" ]] && arc_by_sha["$sha"]="$b" || true
     done < <(_arx_read_all)
 
+    # Load all refs an upstream could point to (remote-tracking refs, plus
+    # local branches for branch.<name>.remote=.) in one call – replaces a
+    # per-branch `git rev-parse --verify` subprocess.
+    declare -A existing_refs
+    while IFS= read -r ref; do
+        existing_refs["$ref"]=1
+    done < <(git for-each-ref --format='%(refname)' refs/heads/ refs/remotes/)
+
     local archived=0 conflicts=0 already_safe=0
     while IFS=$'\t' read -r branch sha date upstream_ref; do
         # Skip never-pushed branches (no upstream configured); only archive remote-deleted ones
@@ -377,7 +385,7 @@ cmd_update() {
             continue
         fi
         # Skip if upstream ref exists locally (live remote tracking branch)
-        if git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
+        if [[ -n "${existing_refs[$upstream_ref]:-}" ]]; then
             continue
         fi
 
@@ -456,6 +464,14 @@ cmd_status() {
         [[ -z "${arc_by_sha[$sha]:-}" ]] && arc_by_sha["$sha"]="$b" || true
     done < <(_arx_read_all)
 
+    # Load all refs an upstream could point to (remote-tracking refs, plus
+    # local branches for branch.<name>.remote=.) in one call – replaces a
+    # per-branch `git rev-parse --verify` subprocess.
+    declare -A existing_refs
+    while IFS= read -r ref; do
+        existing_refs["$ref"]=1
+    done < <(git for-each-ref --format='%(refname)' refs/heads/ refs/remotes/)
+
     declare -A local_branches=()
     local -a rows=()
     # Single for-each-ref call fetches SHA, date, author, and upstream for
@@ -466,7 +482,7 @@ cmd_status() {
     while IFS=$'\t' read -r branch sha date author upstream_ref; do
         local_branches["$branch"]=1
         # Skip if upstream ref exists locally (live remote tracking branch)
-        if [[ -n "$upstream_ref" ]] && git rev-parse --verify "$upstream_ref" > /dev/null 2>&1; then
+        if [[ -n "$upstream_ref" && -n "${existing_refs[$upstream_ref]:-}" ]]; then
             continue
         fi
 

@@ -445,6 +445,26 @@ test_update() {
     # Remove it again to restore remote-deleted state
     git update-ref -d refs/remotes/origin/feature/alpha
 
+    # Branch whose upstream is a local branch (branch.<name>.remote=.) counts
+    # as a live upstream – update must skip it, status must not list it
+    git branch --track local-tracker feature/beta > /dev/null 2>&1
+    reset_archive
+    out=$("$ARX" update 2>&1)
+    if ! printf '%s' "$out" | grep -qF "Archived: local-tracker"; then
+        pass "update: skips branch tracking a local branch"
+    else
+        fail "update: skips branch tracking a local branch"
+        printf '      got: %s\n' "$out"
+    fi
+    out=$("$ARX" status --all 2>&1)
+    if ! printf '%s' "$out" | grep -qF "local-tracker"; then
+        pass "status --all: hides branch tracking a local branch"
+    else
+        fail "status --all: hides branch tracking a local branch"
+        printf '      got: %s\n' "$out"
+    fi
+    git branch -D local-tracker > /dev/null 2>&1
+
     # --dry-run: shows same output without writing
     reset_archive
     out=$("$ARX" update --dry-run 2>&1)
