@@ -669,7 +669,7 @@ If reducing remote storage is the goal, delete the branch without archiving it. 
 
 ## Configuration
 
-All settings are managed via `git config`. They can be set per-repo or globally.
+All settings are managed via `git config`. They can be set per-repo or globally. Boolean settings accept any git boolean spelling (`true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`).
 
 ### `arx.storerefs`
 

@@ -1093,6 +1093,43 @@ test_double_add() {
     fi
 }
 
+test_config_bool() {
+    section "git-style boolean config values"
+    reset_archive
+
+    # 'yes' / 'off' are valid git booleans and must be honored
+    git config arx.storefile yes
+    git config arx.storerefs off
+    "$ARX" add feature/alpha > /dev/null 2>&1 || true
+    if grep -qF "feature/alpha" .gitarchive 2>/dev/null; then
+        pass "config: arx.storefile=yes enables file backend"
+    else
+        fail "config: arx.storefile=yes should enable file backend"
+    fi
+    if ! git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
+        pass "config: arx.storerefs=off disables refs backend"
+    else
+        fail "config: arx.storerefs=off should disable refs backend"
+    fi
+
+    reset_archive
+    git config arx.storefile 0
+    git config arx.storerefs 1
+    "$ARX" add feature/beta > /dev/null 2>&1 || true
+    if git rev-parse --verify refs/arx/feature/beta > /dev/null 2>&1; then
+        pass "config: arx.storerefs=1 enables refs backend"
+    else
+        fail "config: arx.storerefs=1 should enable refs backend"
+    fi
+    if [[ ! -f .gitarchive ]]; then
+        pass "config: arx.storefile=0 disables file backend"
+    else
+        fail "config: arx.storefile=0 should disable file backend"
+    fi
+
+    set_storage file
+}
+
 test_error_cases() {
     section "error cases"
     reset_archive
@@ -1150,6 +1187,7 @@ main() {
     test_sync
     test_slashed_branches
     test_double_add
+    test_config_bool
     test_error_cases
 
     teardown

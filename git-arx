@@ -23,11 +23,12 @@ _arx_git_root() {
 }
 
 _arx_config_storerefs() {
-    git config --get arx.storerefs 2>/dev/null || printf 'true'
+    # --type=bool normalizes all git boolean spellings (yes/on/1/...) to true/false
+    git config --type=bool --get arx.storerefs 2>/dev/null || printf 'true'
 }
 
 _arx_config_storefile() {
-    git config --get arx.storefile 2>/dev/null || printf 'false'
+    git config --type=bool --get arx.storefile 2>/dev/null || printf 'false'
 }
 
 _arx_config_file() {
