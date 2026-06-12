@@ -199,6 +199,26 @@ test_remove() {
     assert_fails "remove: missing: nonzero"                              "$ARX" remove feature/alpha
     assert_out   "remove: no arg: usage"        "Usage:"                 "$ARX" remove
     assert_fails "remove: no arg: nonzero"                               "$ARX" remove
+
+    # header-less archive whose only entry is being removed: the filtered
+    # tmpfile is empty, but the replace must still work and the refs backend
+    # delete must still run afterwards
+    reset_archive
+    set_storage both
+    printf 'feature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    git update-ref refs/arx/feature/alpha "$SHA_ALPHA"
+    assert_ok "remove: header-less single-entry archive succeeds" "$ARX" remove feature/alpha
+    if [[ -f .gitarchive ]]; then
+        pass "remove: archive file survives emptying"
+    else
+        fail "remove: archive file should survive emptying"
+    fi
+    if ! git rev-parse --verify refs/arx/feature/alpha > /dev/null 2>&1; then
+        pass "remove: refs entry also deleted"
+    else
+        fail "remove: refs entry should also be deleted"
+    fi
+    set_storage file
 }
 
 test_list() {

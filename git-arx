@@ -90,6 +90,7 @@ _arx_file_write() {
     local archive tmpfile
     archive=$(_arx_config_file)
     tmpfile="${archive}.tmp.$$"
+    : > "$tmpfile"  # create/truncate up front (the loop below only appends)
 
     # Start fresh temp file; preserve header comment if archive exists
     if [[ -f "$archive" ]]; then
@@ -118,6 +119,9 @@ _arx_file_delete() {
     archive=$(_arx_config_file)
     [[ -f "$archive" ]] || return 0
     tmpfile="${archive}.tmp.$$"
+    # Create up front: if every line is filtered out below, mv would otherwise
+    # fail on a missing tmpfile after the archive was already removed.
+    : > "$tmpfile"
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -n "$line" && "$line" != \#* && "${line%% *}" == "$branch" ]] && continue

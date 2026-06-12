@@ -186,6 +186,8 @@ The file is never modified in place. Every write uses a filter-then-append patte
 
 The temp file name uses `$$` (the shell's PID) to avoid collisions if multiple instances run simultaneously (unlikely for an interactive CLI, but safe practice).
 
+The temp file is created (and truncated) up front with `: > "$tmpfile"`. The filter loops only append, so without this a delete that filters out every line (e.g. a header-less archive whose only entry is removed) would never create the temp file — the final `mv` would then fail *after* the old archive was already removed, aborting the script before the refs backend delete runs. Truncating up front also discards any stale temp file left behind by a crashed run with a recycled PID.
+
 The replace step on Windows/MINGW64 requires an explicit `rm -f` before `mv`:
 
 ```bash
