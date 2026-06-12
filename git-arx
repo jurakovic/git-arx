@@ -537,7 +537,9 @@ cmd_status() {
     local sort_field sort_flag sort_keys
     [[ "$sort_by" == "name" ]] && sort_field=1 || sort_field=3
     [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
-    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field} -k1" || sort_keys="-k${sort_field}"
+    # Keys must be bounded (-kN,N): an open -kN spans to end of line, which
+    # would tiebreak on whatever fields follow instead of the branch name.
+    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field},${sort_field} -k1,1" || sort_keys="-k${sort_field},${sort_field}"
 
     local C_RED='' C_GREEN='' C_CYAN='' C_YELLOW='' C_DIM='' C_RESET=''
     if [[ -t 1 ]]; then
@@ -650,7 +652,9 @@ cmd_list() {
     local sort_field sort_flag sort_keys
     [[ "$sort_by" == "name" ]] && sort_field=1 || sort_field=3
     [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
-    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field} -k1" || sort_keys="-k${sort_field}"
+    # Keys must be bounded (-kN,N): an open -kN spans to end of line, which
+    # would tiebreak on whatever fields follow instead of the branch name.
+    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field},${sort_field} -k1,1" || sort_keys="-k${sort_field},${sort_field}"
 
     # shellcheck disable=SC2086
     local sorted

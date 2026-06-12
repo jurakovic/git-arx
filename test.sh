@@ -607,6 +607,32 @@ test_update() {
     done
 }
 
+test_sort_tiebreak() {
+    section "sort tiebreaker"
+    reset_archive
+
+    # Two branches, same commit date, with author order contradicting name
+    # order: the documented tiebreaker for --sort=date is the branch name,
+    # not whatever column happens to follow the date.
+    local sha_x sha_y
+    sha_x=$(GIT_AUTHOR_NAME="Zed" GIT_AUTHOR_EMAIL="z@example.com" GIT_AUTHOR_DATE="2020-01-01T00:00:00+00:00" \
+        git commit-tree -m "tie-x" "HEAD^{tree}")
+    sha_y=$(GIT_AUTHOR_NAME="Ann" GIT_AUTHOR_EMAIL="a@example.com" GIT_AUTHOR_DATE="2020-01-01T00:00:00+00:00" \
+        git commit-tree -m "tie-y" "HEAD^{tree}")
+    git branch aaa-tie "$sha_x"   # author Zed
+    git branch zzz-tie "$sha_y"   # author Ann
+
+    local tie_first
+    tie_first=$("$ARX" status --all --sort=date --order=asc 2>&1 | grep -oE 'aaa-tie|zzz-tie' | head -1)
+    if [[ "$tie_first" == "aaa-tie" ]]; then
+        pass "status --sort=date: equal dates tiebreak by branch name"
+    else
+        fail "status --sort=date: equal dates should tiebreak by name (got '$tie_first' first)"
+    fi
+
+    git branch -D aaa-tie zzz-tie > /dev/null 2>&1
+}
+
 test_log() {
     section "log"
     reset_archive
@@ -1208,6 +1234,7 @@ main() {
     test_rename
     test_list
     test_update
+    test_sort_tiebreak
     test_log
     test_checkout
     test_prune
