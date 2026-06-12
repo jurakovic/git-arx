@@ -769,6 +769,17 @@ test_refs_backend() {
         fail "refs: ref should be removed"
     fi
 
+    # refs backend must report the author date (what the file backend stores),
+    # not the committer date – these differ after rebase/amend/cherry-pick
+    local dated_sha
+    dated_sha=$(GIT_AUTHOR_DATE="2020-01-02T03:04:05+00:00" GIT_COMMITTER_DATE="2021-06-07T08:09:10+00:00" \
+        git commit-tree -m "dated" "HEAD^{tree}")
+    git branch dated-branch "$dated_sha"
+    "$ARX" add dated-branch > /dev/null
+    assert_out "refs list: shows author date, not committer date" "2020-01-02" "$ARX" list
+    git branch -D dated-branch > /dev/null 2>&1
+    git update-ref -d refs/arx/dated-branch
+
     set_storage file
 }
 

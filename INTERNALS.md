@@ -227,13 +227,13 @@ The refs backend does not store dates explicitly – the date is read from the c
 
 ```bash
 git for-each-ref \
-    --format='%(refname) %(objectname) %(creatordate:iso-strict)' \
+    --format='%(refname) %(objectname) %(authordate:iso-strict)' \
     "$refsprefix"
 ```
 
 `%(refname)` gives the full ref path (e.g., `refs/arx/feature/login`). The configured prefix is then stripped in `_arx_refs_read` to recover the branch name.
 
-`%(creatordate:iso-strict)` gives the ISO-8601 date of the commit the ref points to. This is the same date that would have been stored in the file backend, so the normalized output of both `_arx_file_read` and `_arx_refs_read` is identical in format.
+`%(authordate:iso-strict)` gives the ISO-8601 author date of the commit the ref points to — the same date the file backend stores (`git log -1 --format=%aI`), so the normalized output of both `_arx_file_read` and `_arx_refs_read` is identical. `%(creatordate)` would be the committer date, which diverges from the author date after rebase, amend, or cherry-pick — the two backends would then report different dates for the same entry.
 
 ### Remote Operations
 

@@ -138,7 +138,7 @@ _arx_refs_read() {
     local refsprefix
     refsprefix=$(_arx_config_refsprefix)
     git for-each-ref \
-        --format='%(refname) %(objectname) %(creatordate:iso-strict)' \
+        --format='%(refname) %(objectname) %(authordate:iso-strict)' \
         "$refsprefix" \
     | while IFS=' ' read -r refname sha date rest; do
         local branch="${refname#$refsprefix}"
