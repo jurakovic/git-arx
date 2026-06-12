@@ -108,7 +108,9 @@ main() {
 }
 ```
 
-`ARX_GIT_ROOT` is set once at startup and used by `_arx_config_file()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git arx list` works correctly regardless of which subdirectory the user is in when they run it.
+`ARX_GIT_ROOT` is set once at startup and used by `_arx_load_config()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git arx list` works correctly regardless of which subdirectory the user is in when they run it.
+
+`_arx_load_config()` runs right after, reading all `arx.*` settings into globals in one pass: `ARX_STOREREFS`, `ARX_STOREFILE`, `ARX_FILE` (full archive path), `ARX_REFSPREFIX`, and `ARX_REMOTE_PREFIX` (the remote-tracking namespace derived from the refs prefix). Everything downstream reads these variables directly – config is never re-read during a run. Before this, each `_arx_config_*` helper spawned a `git config` subprocess per call; a single `_arx_write` cost four of them, so `arx update` archiving N branches paid ~4N subprocesses for values that cannot change mid-run.
 
 Commands that don't apply to the configured storage call `_arx_require_storage` at the top of their function, which prints a descriptive error and exits:
 
@@ -211,7 +213,7 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 ### Namespace
 
-Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` via `_arx_config_refsprefix()`.
+Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` once at startup into `ARX_REFSPREFIX` (see `_arx_load_config()`).
 
 Git ref names allow forward slashes and use them to create directory structure. `refs/arx/feature/login` is stored as the file `.git/refs/arx/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` – no special handling is needed.
 

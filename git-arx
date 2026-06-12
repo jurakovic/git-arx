@@ -22,50 +22,35 @@ _arx_git_root() {
     git rev-parse --show-toplevel
 }
 
-_arx_config_storerefs() {
+_arx_load_config() {
+    # Read all arx.* config once at startup – every later access is a plain
+    # variable read instead of a git config subprocess per call.
     # --type=bool normalizes all git boolean spellings (yes/on/1/...) to true/false
-    git config --type=bool --get arx.storerefs 2>/dev/null || printf 'true'
-}
-
-_arx_config_storefile() {
-    git config --type=bool --get arx.storefile 2>/dev/null || printf 'false'
-}
-
-_arx_config_file() {
+    ARX_STOREREFS=$(git config --type=bool --get arx.storerefs 2>/dev/null || printf 'true')
+    ARX_STOREFILE=$(git config --type=bool --get arx.storefile 2>/dev/null || printf 'false')
     local filename
     filename=$(git config --get arx.filepath 2>/dev/null || printf '.gitarchive')
     # Resolve relative to repo root, not $PWD
-    printf '%s/%s' "$ARX_GIT_ROOT" "$filename"
-}
-
-_arx_config_refsprefix() {
-    git config --get arx.refsprefix 2>/dev/null || printf 'refs/arx/'
-}
-
-_arx_config_remote_tracking_prefix() {
-    local refsprefix
-    refsprefix=$(_arx_config_refsprefix)
-    printf '%s' "${refsprefix%/}-remote/origin/"
+    ARX_FILE="${ARX_GIT_ROOT}/${filename}"
+    ARX_REFSPREFIX=$(git config --get arx.refsprefix 2>/dev/null || printf 'refs/arx/')
+    ARX_REMOTE_PREFIX="${ARX_REFSPREFIX%/}-remote/origin/"
 }
 
 _arx_require_storage() {
     local required="$1"
-    local use_refs use_file
-    use_refs=$(_arx_config_storerefs)
-    use_file=$(_arx_config_storefile)
     case "$required" in
         refs)
-            [[ "$use_refs" == "true" ]] && return 0
+            [[ "$ARX_STOREREFS" == "true" ]] && return 0
             printf 'git-arx: this command requires refs storage (set: git config arx.storerefs true)\n' >&2
             exit 1
             ;;
         file)
-            [[ "$use_file" == "true" ]] && return 0
+            [[ "$ARX_STOREFILE" == "true" ]] && return 0
             printf 'git-arx: this command requires file storage (set: git config arx.storefile true)\n' >&2
             exit 1
             ;;
         both)
-            [[ "$use_refs" == "true" && "$use_file" == "true" ]] && return 0
+            [[ "$ARX_STOREREFS" == "true" && "$ARX_STOREFILE" == "true" ]] && return 0
             printf 'git-arx: this command requires both storage backends (arx.storerefs and arx.storefile must both be true)\n' >&2
             exit 1
             ;;
@@ -75,8 +60,7 @@ _arx_require_storage() {
 # --- BACKEND: FILE -----------------------------------------------------------
 
 _arx_file_read() {
-    local archive
-    archive=$(_arx_config_file)
+    local archive="$ARX_FILE"
     [[ -f "$archive" ]] || return 0
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip blank lines and comment lines
@@ -87,8 +71,7 @@ _arx_file_read() {
 
 _arx_file_write() {
     local branch="$1" sha="$2" date="$3"
-    local archive tmpfile
-    archive=$(_arx_config_file)
+    local archive="$ARX_FILE" tmpfile
     tmpfile="${archive}.tmp.$$"
     : > "$tmpfile"  # create/truncate up front (the loop below only appends)
 
@@ -116,8 +99,7 @@ _arx_file_write() {
 _arx_file_write_bulk() {
     # Read "branch sha date" records from stdin and write them all in one
     # filter-then-append pass – a single file rewrite instead of one per entry.
-    local archive tmpfile line branch sha date rest
-    archive=$(_arx_config_file)
+    local archive="$ARX_FILE" tmpfile line branch sha date rest
 
     local -a entries=()
     declare -A incoming=()
@@ -153,8 +135,7 @@ _arx_file_write_bulk() {
 
 _arx_file_delete() {
     local branch="$1"
-    local archive tmpfile
-    archive=$(_arx_config_file)
+    local archive="$ARX_FILE" tmpfile
     [[ -f "$archive" ]] || return 0
     tmpfile="${archive}.tmp.$$"
     # Create up front: if every line is filtered out below, mv would otherwise
@@ -173,8 +154,7 @@ _arx_file_delete() {
 # --- BACKEND: REFS -----------------------------------------------------------
 
 _arx_refs_read() {
-    local refsprefix
-    refsprefix=$(_arx_config_refsprefix)
+    local refsprefix="$ARX_REFSPREFIX"
     git for-each-ref \
         --format='%(refname) %(objectname) %(authordate:iso-strict)' \
         "$refsprefix" \
@@ -186,25 +166,18 @@ _arx_refs_read() {
 
 _arx_refs_write() {
     local branch="$1" sha="$2"
-    local refsprefix
-    refsprefix=$(_arx_config_refsprefix)
-    git update-ref "${refsprefix}${branch}" "$sha"
+    git update-ref "${ARX_REFSPREFIX}${branch}" "$sha"
 }
 
 _arx_refs_delete() {
     local branch="$1"
-    local refsprefix
-    refsprefix=$(_arx_config_refsprefix)
-    git update-ref -d "${refsprefix}${branch}" 2>/dev/null || true
+    git update-ref -d "${ARX_REFSPREFIX}${branch}" 2>/dev/null || true
 }
 
 # --- ABSTRACTION LAYER -------------------------------------------------------
 
 _arx_read_all() {
-    local use_refs use_file
-    use_refs=$(_arx_config_storerefs)
-    use_file=$(_arx_config_storefile)
-    if [[ "$use_refs" == "true" && "$use_file" == "true" ]]; then
+    if [[ "$ARX_STOREREFS" == "true" && "$ARX_STOREFILE" == "true" ]]; then
         # Union merge: refs are primary; supplement with file-only entries
         declare -A seen
         while IFS=' ' read -r branch sha date rest; do
@@ -216,9 +189,9 @@ _arx_read_all() {
                 printf '%s %s %s\n' "$branch" "$sha" "$date"
             fi
         done < <(_arx_file_read)
-    elif [[ "$use_refs" == "true" ]]; then
+    elif [[ "$ARX_STOREREFS" == "true" ]]; then
         _arx_refs_read
-    elif [[ "$use_file" == "true" ]]; then
+    elif [[ "$ARX_STOREFILE" == "true" ]]; then
         _arx_file_read
     else
         printf 'git-arx: no storage backend enabled (set arx.storerefs=true or arx.storefile=true)\n' >&2
@@ -228,26 +201,20 @@ _arx_read_all() {
 
 _arx_write() {
     local branch="$1" sha="$2" date="$3"
-    local use_refs use_file
-    use_refs=$(_arx_config_storerefs)
-    use_file=$(_arx_config_storefile)
-    if [[ "$use_file" == "true" ]]; then
+    if [[ "$ARX_STOREFILE" == "true" ]]; then
         _arx_file_write "$branch" "$sha" "$date"
     fi
-    if [[ "$use_refs" == "true" ]]; then
+    if [[ "$ARX_STOREREFS" == "true" ]]; then
         _arx_refs_write "$branch" "$sha"
     fi
 }
 
 _arx_delete() {
     local branch="$1"
-    local use_refs use_file
-    use_refs=$(_arx_config_storerefs)
-    use_file=$(_arx_config_storefile)
-    if [[ "$use_file" == "true" ]]; then
+    if [[ "$ARX_STOREFILE" == "true" ]]; then
         _arx_file_delete "$branch"
     fi
-    if [[ "$use_refs" == "true" ]]; then
+    if [[ "$ARX_STOREREFS" == "true" ]]; then
         _arx_refs_delete "$branch"
     fi
 }
@@ -589,13 +556,9 @@ cmd_status() {
     local show_remote=0
     declare -A remote_sha_by_branch=()
     if [[ $show_all -eq 1 ]]; then
-        local use_refs
-        use_refs=$(_arx_config_storerefs)
-        if [[ "$use_refs" == "true" ]]; then
+        if [[ "$ARX_STOREREFS" == "true" ]]; then
             show_remote=1
-            local refsprefix remote_prefix
-            refsprefix=$(_arx_config_refsprefix)
-            remote_prefix=$(_arx_config_remote_tracking_prefix)
+            local remote_prefix="$ARX_REMOTE_PREFIX"
             while IFS=' ' read -r refname sha _rest; do
                 remote_sha_by_branch["${refname#"$remote_prefix"}"]="$sha"
             done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix" 2>/dev/null || true)
@@ -719,18 +682,14 @@ cmd_list() {
 
     # Show REMOTE column when refs backend is active (not when filtered to file-only)
     local show_remote=0
-    local use_refs
-    use_refs=$(_arx_config_storerefs)
-    if [[ "$use_refs" == "true" && "$list_storage" != "file" ]]; then
+    if [[ "$ARX_STOREREFS" == "true" && "$list_storage" != "file" ]]; then
         show_remote=1
     fi
 
     # Load remote tracking refs for REMOTE column
     declare -A remote_sha_map=()
     if [[ $show_remote -eq 1 ]]; then
-        local refsprefix remote_prefix
-        refsprefix=$(_arx_config_refsprefix)
-        remote_prefix=$(_arx_config_remote_tracking_prefix)
+        local remote_prefix="$ARX_REMOTE_PREFIX"
         while IFS=' ' read -r refname sha _rest; do
             remote_sha_map["${refname#"$remote_prefix"}"]="$sha"
         done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix" 2>/dev/null || true)
@@ -1063,9 +1022,8 @@ cmd_prune() {
 
 cmd_push() {
     _arx_require_storage refs
-    local dry_run="" force="" prune=0 delete_branch="" refsprefix remote_prefix
-    refsprefix=$(_arx_config_refsprefix)
-    remote_prefix=$(_arx_config_remote_tracking_prefix)
+    local dry_run="" force="" prune=0 delete_branch=""
+    local refsprefix="$ARX_REFSPREFIX" remote_prefix="$ARX_REMOTE_PREFIX"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --dry-run|-n) dry_run="--dry-run" ;;
@@ -1123,8 +1081,7 @@ cmd_fetch() {
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
-    local refsprefix
-    refsprefix=$(_arx_config_refsprefix)
+    local refsprefix="$ARX_REFSPREFIX"
 
     # Query remote refs without downloading objects
     declare -A remote_sha=()
@@ -1193,9 +1150,7 @@ cmd_fetch() {
 
 cmd_pull() {
     _arx_require_storage refs
-    local refsprefix remote_prefix
-    refsprefix=$(_arx_config_refsprefix)
-    remote_prefix=$(_arx_config_remote_tracking_prefix)
+    local refsprefix="$ARX_REFSPREFIX" remote_prefix="$ARX_REMOTE_PREFIX"
     # Fetch remote arx refs into the tracking namespace, then sync to local refs.
     # '+' allows non-fast-forward updates (after arx push --force on another
     # machine); --prune drops tracking refs whose remote counterpart is gone.
@@ -1205,9 +1160,7 @@ cmd_pull() {
     done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix")
 
     # If file backend is also enabled, sync fetched refs into .gitarchive
-    local use_file
-    use_file=$(_arx_config_storefile)
-    if [[ "$use_file" == "true" ]]; then
+    if [[ "$ARX_STOREFILE" == "true" ]]; then
         _arx_refs_read | _arx_file_write_bulk
         printf 'Synced fetched refs to .gitarchive\n'
     fi
@@ -1353,6 +1306,7 @@ main() {
 
     _arx_require_git
     ARX_GIT_ROOT=$(_arx_git_root)
+    _arx_load_config
 
     case "$cmd" in
         add)      cmd_add "$@" ;;
