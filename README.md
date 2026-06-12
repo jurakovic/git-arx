@@ -136,7 +136,7 @@ The bash 4+ requirement comes from `declare -A` (associative arrays). On stock m
 
 Show all local branches with no remote upstream – the same set that `git arx update` would process – along with their current SHA, date, author, and archive status. Nothing is written.
 
-Use `--all` / `-a` to also include archived branches that are not already listed (i.e. those that still have a valid remote upstream or no longer exist locally).
+Use `--all` / `-a` to also include never-pushed local branches (shown as `Local only`) and archived branches that no longer exist locally. Branches with a live remote upstream are never listed.
 
 ```bash
 git arx status
@@ -175,7 +175,7 @@ Useful as a preview step before running `update`, especially in shared repositor
 | `--sort=date` | Sort by commit date |
 | `--order=asc` | Ascending order |
 | `--order=desc` | Descending order |
-| `--all`, `-a` | Also show archived branches not already listed above |
+| `--all`, `-a` | Also show never-pushed branches and archived branches with no local counterpart |
 
 The default order depends on the sort key: `asc` for `--sort=name`, `desc` for `--sort=date`. When dates are equal, name is used as a tiebreaker.
 
@@ -663,7 +663,7 @@ With both enabled, writes go to both backends; reads prefer refs and supplement 
 
 Archiving a branch preserves all of its objects. Because `refs/arx/*` is outside the default clone refspec (`refs/heads/*`, `refs/tags/*`), a regular `git clone` will not transfer those objects — they stay on the remote until explicitly fetched with `git arx pull`. A mirror clone (`git clone --mirror`), which fetches all refs, will include them.
 
-If reducing remote storage is the goal, delete the branch without archiving it. The objects will become unreachable and the hosting provider can prune them during the next GC run.
+If reducing remote storage is the goal, delete the branch without archiving it. The objects will become unreachable and the hosting provider can prune them during the next GC run. For archived refs that were already pushed, remove them from the remote with `git arx push --delete <branch>` (single ref) or `git arx push --prune` (everything no longer in the local archive).
 
 ---
 
