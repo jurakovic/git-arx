@@ -158,9 +158,8 @@ Removes from all enabled backends. When both are enabled, removes from file firs
 
 Several helper functions are defined between the abstraction layer and the commands:
 
-- `_arx_lookup_branch(branch)` – calls `_arx_read_all` and returns `sha date` for the named branch.
+- `_arx_lookup_branch(branch)` – calls `_arx_read_all` and returns `sha date` for the named branch. Used by single-branch commands (`remove`, `rename`, `log`, `checkout`); `add` and `update` scan the archive themselves in one pass instead (see the `arx add` and Performance sections).
 - `_arx_sha_exists(sha)` – checks object existence via `git cat-file -e`; used by `log` and `checkout` before operating on an archived SHA.
-- `_arx_lookup_sha(sha)` – reverse-lookup: scans `_arx_read_all` output for all entries matching the target SHA. Used by `arx add` to detect when a commit is already archived under a different name. `arx update` uses the in-memory `arc_by_sha` map instead (see Performance section).
 
 ---
 
@@ -353,14 +352,14 @@ The result is stored in `author_by_sha[sha]=name` and looked up during rendering
 
 ### `arx add` – Conflict Detection
 
-Before writing, `add` calls `_arx_lookup_branch` against the target name (which may be a custom archive name). Four outcomes:
+Before writing, `add` scans `_arx_read_all` once, resolving two things in the same pass: the SHA stored under the target name (which may be a custom archive name), and any names the branch's current SHA is already stored under. Four outcomes:
 
 1. **Not archived** – write and report `Archived:`.
 2. **Archived with same SHA** – exit 0 with `Already archived:`. Idempotent; safe to call repeatedly.
 3. **Archived with different SHA** – conflict. Exit 1 with an error and hints. `--force` overwrites; an `archive-name` argument stores under a different name instead.
-4. **Not archived by target name, but SHA already present under a different name** – `_arx_lookup_sha` finds the duplicate. Prints a `Note:` line, then writes anyway (the user explicitly requested this archive entry).
+4. **Not archived by target name, but SHA already present under a different name** – the same-pass reverse lookup finds the duplicate. Prints a `Note:` line, then writes anyway (the user explicitly requested this archive entry).
 
-`arx update` applies the same conflict logic for every candidate branch, using the in-memory `arc_by_name` and `arc_by_sha` maps (see Performance section) rather than calling `_arx_lookup_branch` and `_arx_lookup_sha` per branch. If the current SHA is already stored under a different name, the branch is skipped with an `Already safe:` message and counted separately in the summary. This prevents silent duplicate SHA storage during automatic archiving. If the user wants the branch indexed under its natural name too, they can run `git arx add <branch>` explicitly.
+`arx update` applies the same conflict logic for every candidate branch, using the in-memory `arc_by_name` and `arc_by_sha` maps (see Performance section). If the current SHA is already stored under a different name, the branch is skipped with an `Already safe:` message and counted separately in the summary. This prevents silent duplicate SHA storage during automatic archiving. If the user wants the branch indexed under its natural name too, they can run `git arx add <branch>` explicitly.
 
 ### `arx rename`
 

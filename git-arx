@@ -262,15 +262,6 @@ _arx_sha_exists() {
     git cat-file -e "$sha" 2>/dev/null
 }
 
-_arx_lookup_sha() {
-    local target_sha="$1" match_name sha date rest
-    local -a names=()
-    while IFS=' ' read -r match_name sha date rest; do
-        [[ "$sha" == "$target_sha" ]] && names+=("$match_name") || true
-    done < <(_arx_read_all)
-    [[ ${#names[@]} -gt 0 ]] && printf '%s' "${names[*]}" || true
-}
-
 # --- COMMANDS ----------------------------------------------------------------
 
 cmd_add() {
@@ -301,10 +292,16 @@ cmd_add() {
 
     local store_name="${archive_name:-$branch}"
 
-    local existing_entry existing_sha
-    existing_entry=$(_arx_lookup_branch "$store_name")
-    if [[ -n "$existing_entry" ]]; then
-        existing_sha=$(printf '%s' "$existing_entry" | awk '{print $1}')
+    # One pass over the archive resolves both lookups: the entry stored under
+    # the target name, and any names the current SHA is already stored under.
+    local existing_sha="" existing_as=""
+    local b s d rest
+    while IFS=' ' read -r b s d rest; do
+        [[ "$b" == "$store_name" ]] && existing_sha="$s" || true
+        [[ "$s" == "$sha" ]] && existing_as="${existing_as:+$existing_as }$b" || true
+    done < <(_arx_read_all)
+
+    if [[ -n "$existing_sha" ]]; then
         if [[ "$existing_sha" == "$sha" ]]; then
             printf 'Already archived: %s at %s\n' "$store_name" "${sha:0:8}"
             return 0
@@ -320,8 +317,6 @@ cmd_add() {
         fi
     fi
 
-    local existing_as
-    existing_as=$(_arx_lookup_sha "$sha")
     if [[ -n "$existing_as" ]]; then
         printf 'Note: %s is already archived as "%s"\n' "${sha:0:8}" "$existing_as"
     fi
