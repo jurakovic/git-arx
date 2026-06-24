@@ -16,7 +16,7 @@ _git_arx() {
     _get_comp_words_by_ref -n : cur prev words cword
 
     if [[ $cword -eq 2 ]]; then
-        __gitcomp "status update prune list ls log checkout add remove rm rename mv merge push fetch pull sync upgrade help"
+        __gitcomp "status update prune list ls log checkout add remove rm rename mv merge push fetch pull purge sync upgrade help"
         return
     fi
 
@@ -73,6 +73,9 @@ _git_arx() {
     fetch)
         ;;
     pull)
+        ;;
+    purge)
+        __gitcomp "--force --dry-run"
         ;;
     sync)
         __gitcomp "--dry-run --force-file --force-refs"

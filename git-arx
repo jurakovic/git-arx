@@ -1220,6 +1220,68 @@ cmd_pull() {
     fi
 }
 
+cmd_purge() {
+    _arx_require_storage refs
+    local dry_run=0 force=0
+    for arg in "$@"; do
+        case "$arg" in
+            --dry-run|-n) dry_run=1 ;;
+            --force|-f)   force=1 ;;
+            *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
+        esac
+    done
+    local refsprefix="$ARX_REFSPREFIX" remote_prefix="$ARX_REMOTE_PREFIX"
+
+    # Query the remote for every arx ref it holds – purge deletes all of them,
+    # regardless of what the local archive contains.
+    local -a remote_refs=() branches=()
+    local sha refname
+    while IFS=$'\t' read -r sha refname; do
+        remote_refs+=("$refname")
+        branches+=("${refname#"$refsprefix"}")
+    done < <(git ls-remote origin "${refsprefix}*" 2>/dev/null || true)
+
+    if [[ ${#remote_refs[@]} -eq 0 ]]; then
+        printf 'No archived refs on the remote.\n'
+        return 0
+    fi
+
+    printf 'The following archived refs will be deleted from the remote (origin):\n'
+    local b
+    for b in "${branches[@]}"; do
+        printf '  %s\n' "$b"
+    done
+    printf '\n'
+
+    if [[ $dry_run -eq 1 ]]; then
+        printf 'Done. Deleted %d remote ref(s).\n' "${#remote_refs[@]}"
+        printf '(dry run – no changes written)\n'
+        return 0
+    fi
+
+    if [[ $force -eq 0 ]]; then
+        printf 'NOTE: This deletes the remote copies of all archived refs.\n'
+        printf 'Your local archive is not affected – re-publish anytime with git arx push.\n'
+        printf 'Type "yes" to continue: '
+        local answer
+        read -r answer || true
+        if [[ "$answer" != "yes" ]]; then
+            printf 'Aborted.\n'
+            exit 1
+        fi
+    fi
+
+    # One push deletes every remote arx ref in a single round-trip.
+    git push origin --delete "${remote_refs[@]}"
+
+    # The remote now has no arx refs, so drop all local tracking refs to match.
+    while IFS=' ' read -r refname _rest; do
+        git update-ref -d "$refname" 2>/dev/null || true
+    done < <(git for-each-ref --format='%(refname)' "$remote_prefix" 2>/dev/null || true)
+
+    printf 'Done. Deleted %d remote ref(s).\n' "${#remote_refs[@]}"
+}
+
 cmd_upgrade() {
     local yes=0
     for arg in "$@"; do
@@ -1302,6 +1364,8 @@ COMMANDS
        [--delete <branch>]               Delete a single archived ref from remote
   fetch                                  Preview what pull would bring in  [refs only]
   pull                                   Pull archived refs from remote    [refs only]
+  purge [-f|--force] [-n|--dry-run]      Delete ALL archived refs from the [refs only]
+                                         remote (local archive untouched)
   sync [-n|--dry-run]                    Reconcile file and refs backends  [file+refs]
        [--force-file]
        [--force-refs]
@@ -1342,6 +1406,7 @@ EXAMPLES
   git arx push --delete feature/my-feature
   git arx push --prune
   git arx pull
+  git arx purge
 
 EOF
 }
@@ -1376,6 +1441,7 @@ main() {
         push)     cmd_push "$@" ;;
         fetch)    cmd_fetch "$@" ;;
         pull)     cmd_pull "$@" ;;
+        purge)    cmd_purge "$@" ;;
         sync)     cmd_sync "$@" ;;
         "")       cmd_help; exit 1 ;;
         *)

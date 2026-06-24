@@ -1024,6 +1024,53 @@ test_push_pull() {
     set_storage file
 }
 
+test_purge() {
+    section "purge (refs backend)"
+    reset_archive
+    set_storage refs
+
+    "$ARX" add feature/alpha > /dev/null
+    "$ARX" add feature/beta  > /dev/null
+    "$ARX" push > /dev/null  # both refs now on remote
+
+    assert_fails "purge: unknown option" "$ARX" purge --bogus
+
+    # --dry-run lists refs but deletes nothing
+    assert_out "purge: --dry-run lists remote refs" "feature/alpha" "$ARX" purge --dry-run
+    if git ls-remote "$REMOTE" 'refs/arx/feature/alpha' | grep -q 'refs/arx/'; then
+        pass "purge: --dry-run leaves remote refs intact"
+    else
+        fail "purge: --dry-run should not delete remote refs"
+    fi
+
+    # --force deletes all remote refs regardless of local archive
+    assert_ok "purge: --force succeeds" "$ARX" purge --force
+    if ! git ls-remote "$REMOTE" 'refs/arx/*' | grep -q 'refs/arx/'; then
+        pass "purge: all remote refs removed"
+    else
+        fail "purge: remote should hold no arx refs"
+    fi
+    if ! git rev-parse --verify refs/arx-remote/origin/feature/alpha > /dev/null 2>&1; then
+        pass "purge: remote tracking refs cleaned up"
+    else
+        fail "purge: remote tracking refs should be cleaned up"
+    fi
+
+    # local archive is untouched
+    local list_out
+    list_out=$("$ARX" list)
+    if grep -qF "feature/alpha" <<< "$list_out" && grep -qF "feature/beta" <<< "$list_out"; then
+        pass "purge: local archive left intact"
+    else
+        fail "purge: local archive should be untouched"
+    fi
+
+    # purge on an empty remote is a clean no-op
+    assert_out "purge: no-op when remote empty" "No archived refs on the remote." "$ARX" purge
+
+    set_storage file
+}
+
 test_sync() {
     section "sync (both backend)"
     reset_archive
@@ -1322,6 +1369,7 @@ main() {
     test_refs_backend
     test_both_backend
     test_push_pull
+    test_purge
     test_sync
     test_slashed_branches
     test_double_add

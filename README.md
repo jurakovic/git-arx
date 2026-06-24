@@ -528,6 +528,43 @@ Requires `arx.storerefs` to be enabled.
 
 ---
 
+### `git arx purge`
+
+Delete **all** archived refs from the remote. Unlike `git arx push --prune` (which only deletes remote refs that are absent from your local archive) and `git arx push --delete <branch>` (which deletes one named ref), `purge` removes every `refs/arx/*` ref the remote holds, regardless of local state. Your local archive is never touched — only the remote copies are removed. Local remote-tracking refs are pruned to match. Prompts for confirmation before proceeding.
+
+```bash
+git arx purge
+# The following archived refs will be deleted from the remote (origin):
+#   feature/my-feature
+#   fix/old-bug
+#
+# NOTE: This deletes the remote copies of all archived refs.
+# Your local archive is not affected – re-publish anytime with git arx push.
+# Type "yes" to continue: yes
+# To origin
+#  - [deleted]   refs/arx/feature/my-feature
+#  - [deleted]   refs/arx/fix/old-bug
+# Done. Deleted 2 remote ref(s).
+```
+
+This is the cleanup step for a workflow where the remote is only a transfer channel: secondary workspaces `push` archived refs, the primary `pull`s them, and then `purge` clears the remote so it never accumulates an archive.
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `--force`, `-f` | Skip the confirmation prompt and delete immediately. |
+| `--dry-run`, `-n` | Show which remote refs would be deleted without deleting anything. Produces the same output as a real run, followed by `(dry run – no changes written)`. |
+
+```bash
+git arx purge --dry-run
+git arx purge --force
+```
+
+Requires `arx.storerefs` to be enabled.
+
+---
+
 ### `git arx sync`
 
 Reconcile the two local storage backends when they have drifted out of sync. Performs a union merge: anything present in either backend is written to both.
@@ -743,6 +780,27 @@ On another machine:
 git arx pull
 git arx list
 ```
+
+### Remote as a transfer channel (archive only on the primary)
+
+When you want the archive to live on **one** primary workspace and use the remote
+purely to ferry archived branches in from secondary workspaces — without the
+remote permanently holding an archive:
+
+```bash
+# secondary workspace – archive locally, then push to hand it off
+git arx add my-branch     # or: git arx update
+git arx push
+
+# primary workspace – pull the refs into the local archive, then clear the remote
+git arx pull
+git arx purge
+```
+
+Normal `git push` never touches `refs/arx/*`, so the archive stays local by
+default — the remote only carries refs during the brief window between a
+secondary's `push` and the primary's `purge`. To keep secondary workspaces clean
+too, run `git arx remove my-branch` there after the handoff.
 
 ### Syncing across machines (no shared remote)
 
