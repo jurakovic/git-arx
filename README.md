@@ -737,7 +737,7 @@ git config arx.filepath my-archive.txt
 
 ### `arx.refsprefix`
 
-Refs namespace prefix for the refs backend. Default: `refs/arx/`. Must start with `refs/` and end with `/`.
+Refs namespace prefix for the refs backend. Default: `refs/arx/`. Must be of the form `refs/<namespace>/`: a value that does not name a namespace under `refs/` (including a bare `refs/`) is rejected with an error, and a missing trailing `/` is appended automatically.
 
 ```bash
 git config arx.refsprefix refs/arx/        # default

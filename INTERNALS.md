@@ -218,7 +218,7 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 ### Namespace
 
-Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` once at startup into `ARX_REFSPREFIX` (see `_arx_load_config()`).
+Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` once at startup into `ARX_REFSPREFIX` (see `_arx_load_config()`), which also validates it: the value must name a namespace under `refs/` (a bare `refs/` or a prefix outside `refs/` aborts with an error, since it would make `git for-each-ref` match refs outside the archive), and a missing trailing `/` is appended automatically.
 
 Git ref names allow forward slashes and use them to create directory structure. `refs/arx/feature/login` is stored as the file `.git/refs/arx/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` – no special handling is needed.
 

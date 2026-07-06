@@ -41,8 +41,11 @@ if [[ -n "$TMPFILE" ]]; then
     # Remote install: use git ls-remote to get the latest commit on master
     COMMIT=$(git ls-remote https://github.com/jurakovic/git-arx.git refs/heads/master 2>/dev/null | cut -f1 | cut -c1-7) || COMMIT="dev"
 else
-    # Local install: read from the git repo alongside this script
-    COMMIT=$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null) || COMMIT="dev"
+    # Local install: read from the git repo alongside this script.
+    # cut -c1-7 to match the remote install path and cmd_upgrade's 7-char
+    # comparison exactly; --short=7 is only a minimum and grows to 8+ chars
+    # when the prefix is ambiguous, breaking the comparison.
+    COMMIT=$(git -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null | cut -c1-7) || COMMIT="dev"
 fi
 
 # Determine install directory

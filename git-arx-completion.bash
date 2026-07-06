@@ -24,7 +24,7 @@ _git_arx() {
 
     case "$subcommand" in
     status)
-        __gitcomp "--sort=name --sort=date --order=asc --order=desc"
+        __gitcomp "--all --sort=name --sort=date --order=asc --order=desc"
         ;;
     update)
         __gitcomp "--force --dry-run"
@@ -81,7 +81,7 @@ _git_arx() {
         __gitcomp "--dry-run --force-file --force-refs"
         ;;
     upgrade)
-        __gitcomp "-y"
+        __gitcomp "-y --yes"
         ;;
     esac
 }

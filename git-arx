@@ -33,6 +33,17 @@ _arx_load_config() {
     # Resolve relative to repo root, not $PWD
     ARX_FILE="${ARX_GIT_ROOT}/${filename}"
     ARX_REFSPREFIX=$(git config --get arx.refsprefix 2>/dev/null || printf 'refs/arx/')
+    # A misconfigured prefix fails silently: a ref written under a prefix that
+    # `git for-each-ref <prefix>` can't match back is invisible to every read
+    # (the write succeeds, listings come up empty). Enforce the documented
+    # shape – must name a namespace under refs/, must end with a slash. A bare
+    # "refs/" must be rejected too: it makes every listing match the entire
+    # ref namespace and purge target every ref on the remote.
+    if [[ "$ARX_REFSPREFIX" != refs/?* ]]; then
+        printf 'git-arx: arx.refsprefix must be of the form "refs/<namespace>/" (got: "%s")\n' "$ARX_REFSPREFIX" >&2
+        exit 1
+    fi
+    [[ "$ARX_REFSPREFIX" == */ ]] || ARX_REFSPREFIX="${ARX_REFSPREFIX}/"
     ARX_REMOTE_PREFIX="${ARX_REFSPREFIX%/}-remote/origin/"
 }
 
@@ -262,6 +273,47 @@ _arx_sha_exists() {
     git cat-file -e "$sha" 2>/dev/null
 }
 
+_arx_authors_by_sha() {
+    # Print "<sha> <author>" for each SHA argument that still exists.
+    # --ignore-missing drops garbage-collected objects from the batch; without
+    # it a single bad SHA makes `git log --no-walk <sha...>` abort with exit
+    # 128 and print nothing, blanking the author for EVERY entry, not just the
+    # dead one.
+    [[ $# -eq 0 ]] && return 0
+    git log --no-walk --ignore-missing --format='%H %an' "$@" 2>/dev/null || true
+}
+
+_arx_sort_keys() {
+    # Build sort(1) key options for <sort_by: name|date> <order: asc|desc>
+    # over rows whose field 1 is the branch name and field 3 the ISO-8601
+    # date. Reverse only the primary key (per-key 'r' modifier); the -k1,1
+    # name tiebreak stays ascending so same-date entries always list A->Z. A
+    # global -r would reverse the tiebreak too. Keys must be bounded (-kN,N):
+    # an open -kN spans to end of line and would tiebreak on trailing fields
+    # instead of the branch name.
+    local sort_by="$1" order="$2" field r=""
+    [[ "$sort_by" == "name" ]] && field=1 || field=3
+    [[ "$order" == "desc" ]] && r="r"
+    if [[ "$sort_by" == "date" ]]; then
+        printf '%s' "-k${field},${field}${r} -k1,1"
+    else
+        printf '%s' "-k${field},${field}${r}"
+    fi
+}
+
+_arx_ls_remote() {
+    # Print "<sha>\t<refname>" for every arx ref on origin, without
+    # downloading objects. A non-zero ls-remote must abort, not degrade:
+    # `|| true` would report an unreachable remote as "no refs". Let git's
+    # own stderr through — a missing remote or an auth failure has a precise
+    # diagnostic that a generic "check your network" message would
+    # misattribute.
+    if ! git ls-remote origin "${ARX_REFSPREFIX}*"; then
+        printf 'git-arx: failed to query archived refs on origin\n' >&2
+        return 1
+    fi
+}
+
 # --- COMMANDS ----------------------------------------------------------------
 
 cmd_add() {
@@ -309,10 +361,12 @@ cmd_add() {
         if [[ $force -eq 0 ]]; then
             printf 'git-arx: conflict: "%s" is already archived at %s (current: %s)\n' \
                 "$store_name" "${existing_sha:0:8}" "${sha:0:8}" >&2
-            printf 'To overwrite:                  git arx add %s --force\n' "$branch" >&2
-            if [[ -z "$archive_name" ]]; then
-                printf 'To archive under a new name:   git arx add %s <archive-name>\n' "$branch" >&2
+            if [[ -n "$archive_name" ]]; then
+                printf 'To overwrite:                  git arx add %s %s --force\n' "$branch" "$archive_name" >&2
+            else
+                printf 'To overwrite:                  git arx add %s --force\n' "$branch" >&2
             fi
+            printf 'To archive under a new name:   git arx add %s <archive-name>\n' "$branch" >&2
             exit 1
         fi
     fi
@@ -567,7 +621,7 @@ cmd_status() {
             declare -A author_by_sha=()
             while IFS=' ' read -r sha author_name; do
                 author_by_sha["$sha"]="$author_name"
-            done < <(git log --no-walk --format='%H %an' "${orphan_shas[@]}" 2>/dev/null || true)
+            done < <(_arx_authors_by_sha "${orphan_shas[@]}")
             local arc_sha arc_date arc_author
             for arc_branch in "${orphan_branches[@]}"; do
                 arc_sha="${arc_by_name[$arc_branch]}"
@@ -587,12 +641,8 @@ cmd_status() {
         return 0
     fi
 
-    local sort_field sort_flag sort_keys
-    [[ "$sort_by" == "name" ]] && sort_field=1 || sort_field=3
-    [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
-    # Keys must be bounded (-kN,N): an open -kN spans to end of line, which
-    # would tiebreak on whatever fields follow instead of the branch name.
-    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field},${sort_field} -k1,1" || sort_keys="-k${sort_field},${sort_field}"
+    local sort_keys
+    sort_keys=$(_arx_sort_keys "$sort_by" "$order")
 
     local C_RED='' C_GREEN='' C_CYAN='' C_YELLOW='' C_DIM='' C_RESET=''
     if [[ -t 1 ]]; then
@@ -655,7 +705,7 @@ cmd_status() {
         else
             printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st"
         fi
-    done < <(printf '%s\n' "${rows[@]}" | sort $sort_flag -t$'\t' $sort_keys)
+    done < <(printf '%s\n' "${rows[@]}" | sort -t$'\t' $sort_keys)
 }
 
 cmd_list() {
@@ -697,17 +747,12 @@ cmd_list() {
         return 0
     fi
 
-    # Sort: field 1 = branch name, field 3 = date (ISO-8601 sorts lexicographically)
-    local sort_field sort_flag sort_keys
-    [[ "$sort_by" == "name" ]] && sort_field=1 || sort_field=3
-    [[ "$order" == "asc" ]] && sort_flag="" || sort_flag="-r"
-    # Keys must be bounded (-kN,N): an open -kN spans to end of line, which
-    # would tiebreak on whatever fields follow instead of the branch name.
-    [[ "$sort_by" == "date" ]] && sort_keys="-k${sort_field},${sort_field} -k1,1" || sort_keys="-k${sort_field},${sort_field}"
+    local sort_keys
+    sort_keys=$(_arx_sort_keys "$sort_by" "$order")
 
     # shellcheck disable=SC2086
     local sorted
-    sorted=$(printf '%s\n' "$entries" | sort $sort_flag $sort_keys)
+    sorted=$(printf '%s\n' "$entries" | sort $sort_keys)
 
     # For --author, fetch all authors in one git log call instead of per-entry.
     declare -A author_by_sha
@@ -719,7 +764,7 @@ cmd_list() {
         if [[ ${#all_shas[@]} -gt 0 ]]; then
             while IFS=' ' read -r sha author_name; do
                 author_by_sha["$sha"]="$author_name"
-            done < <(git log --no-walk --format='%H %an' "${all_shas[@]}" 2>/dev/null || true)
+            done < <(_arx_authors_by_sha "${all_shas[@]}")
         fi
     fi
 
@@ -770,9 +815,9 @@ cmd_list() {
             fi
         fi
         if [[ $show_author -eq 1 && $show_remote -eq 1 ]]; then
-            printf '%-40s %-9s %-12s %-20s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-\(gc\)}" "$remote_st"
+            printf '%-40s %-9s %-12s %-20s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-(gc)}" "$remote_st"
         elif [[ $show_author -eq 1 ]]; then
-            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-\(gc\)}"
+            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-(gc)}"
         elif [[ $show_remote -eq 1 ]]; then
             printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "$remote_st"
         else
@@ -1137,11 +1182,16 @@ cmd_fetch() {
     done
     local refsprefix="$ARX_REFSPREFIX"
 
-    # Query remote refs without downloading objects
+    # A failed query aborts in _arx_ls_remote — degrading to an empty result
+    # would make every archived branch look 'local' when the remote is simply
+    # unreachable.
     declare -A remote_sha=()
+    local ls_remote_out
+    ls_remote_out=$(_arx_ls_remote) || exit 1
     while IFS=$'\t' read -r sha refname; do
+        [[ -z "$sha" ]] && continue
         remote_sha["${refname#"$refsprefix"}"]="$sha"
-    done < <(git ls-remote origin "${refsprefix}*" 2>/dev/null || true)
+    done <<< "$ls_remote_out"
 
     # Load local refs
     declare -A local_sha=()
@@ -1233,13 +1283,17 @@ cmd_purge() {
     local refsprefix="$ARX_REFSPREFIX" remote_prefix="$ARX_REMOTE_PREFIX"
 
     # Query the remote for every arx ref it holds – purge deletes all of them,
-    # regardless of what the local archive contains.
+    # regardless of what the local archive contains. A failed query aborts in
+    # _arx_ls_remote rather than being reported as 'No archived refs on the
+    # remote.'
     local -a remote_refs=() branches=()
-    local sha refname
+    local sha refname ls_remote_out
+    ls_remote_out=$(_arx_ls_remote) || exit 1
     while IFS=$'\t' read -r sha refname; do
+        [[ -z "$sha" ]] && continue
         remote_refs+=("$refname")
         branches+=("${refname#"$refsprefix"}")
-    done < <(git ls-remote origin "${refsprefix}*" 2>/dev/null || true)
+    done <<< "$ls_remote_out"
 
     if [[ ${#remote_refs[@]} -eq 0 ]]; then
         printf 'No archived refs on the remote.\n'

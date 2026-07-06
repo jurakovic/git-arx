@@ -1,3 +1,4 @@
+* text=auto
+*.sh text eol=lf
 git-arx text eol=lf
-install.sh text eol=lf
-test.sh text eol=lf
+git-arx-completion.bash text eol=lf
