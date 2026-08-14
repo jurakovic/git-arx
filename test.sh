@@ -63,6 +63,17 @@ reset_archive() {
     set_storage file
 }
 
+# Put a branch in the "remote branch was deleted" state: configure an
+# upstream, then drop the tracking ref – what the repo looks like after the
+# branch is deleted on the remote and `git fetch --prune` runs.
+set_gone_upstream() {   # branch
+    local b="$1" sha
+    sha=$(git rev-parse "refs/heads/$b")
+    git update-ref "refs/remotes/origin/$b" "$sha"
+    git branch --set-upstream-to="origin/$b" "$b" > /dev/null 2>&1
+    git update-ref -d "refs/remotes/origin/$b"
+}
+
 recreate_branches() {
     git rev-parse --verify refs/heads/feature/alpha > /dev/null 2>&1 \
         || git branch feature/alpha "$SHA_ALPHA"
@@ -749,8 +760,172 @@ test_prune() {
         fail "prune --dry-run: branch should not be deleted"
     fi
 
+    # SHA archived under a different name, remote branch gone – still safe to
+    # delete, but the name change is surfaced so it is visible before
+    # confirming.
+    reset_archive
+    recreate_branches
+    set_gone_upstream feature/alpha
+    "$ARX" add feature/alpha alpha-renamed > /dev/null
+    out=$("$ARX" prune --dry-run 2>&1)
+    if printf '%s' "$out" | grep -qF 'feature/alpha (archived as "alpha-renamed")'; then
+        pass "prune: labels branch archived under a different name"
+    else
+        fail "prune: should label branch archived under a different name"
+        printf '      got: %s\n' "$out"
+    fi
+    out=$("$ARX" prune --force 2>&1)
+    if ! git rev-parse --verify refs/heads/feature/alpha > /dev/null 2>&1; then
+        pass "prune: deletes branch archived under a different name"
+    else
+        fail "prune: should delete branch archived under a different name"
+        printf '      got: %s\n' "$out"
+    fi
+
+    # Name archived at a different SHA – the current commit is in no archive
+    # entry, so deleting would lose it. Must be skipped as a conflict.
+    reset_archive
+    recreate_branches
+    "$ARX" add feature/beta > /dev/null
+    git checkout feature/beta -q
+    git commit --allow-empty -m "beta moved" -q
+    git checkout "$DEFAULT_BRANCH" -q
+
+    out=$("$ARX" prune --force 2>&1) || true
+    if printf '%s' "$out" | grep -qF "Skipped (archived at a different SHA"; then
+        pass "prune: reports conflict for branch archived at a different SHA"
+    else
+        fail "prune: should report conflict for branch archived at a different SHA"
+        printf '      got: %s\n' "$out"
+    fi
+    if git rev-parse --verify refs/heads/feature/beta > /dev/null 2>&1; then
+        pass "prune: does not delete conflicting branch"
+    else
+        fail "prune: should not delete conflicting branch"
+    fi
+    assert_fails "prune: conflict exits nonzero" "$ARX" prune --force
+    assert_fails "prune --dry-run: conflict exits nonzero" "$ARX" prune --dry-run
+    out=$("$ARX" prune --dry-run 2>&1) || true
+    if printf '%s' "$out" | grep -qF "(dry run – no changes written)"; then
+        pass "prune --dry-run: conflicts-only run still prints dry-run marker"
+    else
+        fail "prune --dry-run: conflicts-only run should print dry-run marker"
+        printf '      got: %s\n' "$out"
+    fi
+    git branch -f feature/beta "$SHA_BETA"
+
+    # A branch with a live remote is out of prune's scope even when its name
+    # is in the archive at an older SHA: its commits are on the remote, so it
+    # is neither deleted nor reported as a conflict.
+    reset_archive
+    recreate_branches
+    "$ARX" add feature/alpha > /dev/null
+    git branch -f feature/alpha "$SHA_BETA"
+    git update-ref refs/remotes/origin/feature/alpha "$SHA_BETA"
+    git branch --set-upstream-to=origin/feature/alpha feature/alpha > /dev/null 2>&1
+    out=$("$ARX" prune --force 2>&1) || true
+    if ! printf '%s' "$out" | grep -qF "archived at a different SHA"; then
+        pass "prune: branch with a live remote is not a conflict"
+    else
+        fail "prune: branch with a live remote should not be a conflict"
+        printf '      got: %s\n' "$out"
+    fi
+    assert_ok "prune: live-remote branch exits 0" "$ARX" prune --force
+    git branch --unset-upstream feature/alpha > /dev/null 2>&1
+    git update-ref -d refs/remotes/origin/feature/alpha
+    git branch -f feature/alpha "$SHA_ALPHA"
+
+    # A branch that merely shares a tip with an archived branch – the default
+    # branch after a fast-forward merge, say – was never archived itself and
+    # must survive.
+    reset_archive
+    recreate_branches
+    git branch shares-tip feature/alpha
+    "$ARX" add feature/alpha > /dev/null
+    out=$("$ARX" prune --force 2>&1) || true
+    if git rev-parse --verify refs/heads/shares-tip > /dev/null 2>&1; then
+        pass "prune: keeps unarchived branch sharing a tip with an archived one"
+    else
+        fail "prune: deleted unarchived branch sharing a tip with an archived one"
+        printf '      got: %s\n' "$out"
+    fi
+    git branch -D shares-tip > /dev/null 2>&1
+
+    # Checked-out branch that has moved past its archived SHA: reported as the
+    # checked-out skip, not as a conflict, and still exits 0.
+    reset_archive
+    recreate_branches
+    "$ARX" add fix/gamma > /dev/null
+    git checkout fix/gamma -q
+    git commit --allow-empty -m "gamma moved" -q
+    out=$("$ARX" prune --force 2>&1) || true
+    if printf '%s' "$out" | grep -qF "Skipped (currently checked out)" \
+        && ! printf '%s' "$out" | grep -qF "archived at a different SHA"; then
+        pass "prune: moved checked-out branch is skipped, not a conflict"
+    else
+        fail "prune: moved checked-out branch should be skipped, not a conflict"
+        printf '      got: %s\n' "$out"
+    fi
+    assert_ok "prune: moved checked-out branch exits 0" "$ARX" prune --force
+    git checkout "$DEFAULT_BRANCH" -q
+    git branch -f fix/gamma "$SHA_GAMMA"
+
+    # Name archived at a stale SHA while the *current* commit is archived
+    # under another name: the commit is safe, so this is a delete, not a
+    # conflict – the same call `status` makes.
+    reset_archive
+    recreate_branches
+    git branch --unset-upstream feature/alpha > /dev/null 2>&1 || true
+    "$ARX" add feature/alpha > /dev/null
+    git branch -f feature/alpha "$SHA_BETA"
+    "$ARX" add feature/alpha beta-copy > /dev/null
+    out=$("$ARX" prune --dry-run 2>&1) || true
+    if printf '%s' "$out" | grep -qF 'feature/alpha (archived as "beta-copy")'; then
+        pass "prune: stale name whose commit is archived elsewhere is a delete"
+    else
+        fail "prune: stale name whose commit is archived elsewhere should be a delete"
+        printf '      got: %s\n' "$out"
+    fi
+    assert_ok "prune: stale name whose commit is archived elsewhere exits 0" \
+        "$ARX" prune --dry-run
+    git branch -f feature/alpha "$SHA_ALPHA"
+
+    # A tag sharing a branch's name makes the shortened refname ambiguous
+    # ("heads/ambiguous"); every branch loop must use the plain branch name.
+    reset_archive
+    git checkout -qb ambiguous
+    git commit --allow-empty -m "ambiguous" -q
+    git checkout -q "$DEFAULT_BRANCH"
+    git tag ambiguous refs/heads/ambiguous
+    set_gone_upstream ambiguous
+
+    out=$("$ARX" update 2>&1) || true
+    if printf '%s' "$out" | grep -qF "Archived: ambiguous" \
+        && ! printf '%s' "$out" | grep -qF "heads/ambiguous"; then
+        pass "update: archives tag-shadowed branch under its plain name"
+    else
+        fail "update: should archive tag-shadowed branch under its plain name"
+        printf '      got: %s\n' "$out"
+    fi
+    out=$("$ARX" status --all 2>&1) || true
+    if ! printf '%s' "$out" | grep -qF "heads/ambiguous"; then
+        pass "status: shows tag-shadowed branch under its plain name"
+    else
+        fail "status: should show tag-shadowed branch under its plain name"
+        printf '      got: %s\n' "$out"
+    fi
+    out=$("$ARX" prune --force 2>&1) || true
+    if ! git rev-parse --verify refs/heads/ambiguous > /dev/null 2>&1; then
+        pass "prune: deletes branch whose name is also a tag"
+    else
+        fail "prune: should delete branch whose name is also a tag"
+        printf '      got: %s\n' "$out"
+    fi
+    git tag -d ambiguous > /dev/null 2>&1
+
     assert_fails "prune: unknown option: nonzero" "$ARX" prune --bogus
 
+    reset_archive
     recreate_branches  # restore for subsequent tests
 }
 

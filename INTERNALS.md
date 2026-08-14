@@ -293,6 +293,8 @@ Both commands use `%(upstream)` from `git for-each-ref` to classify local branch
 
 The existence check is a lookup in an `existing_refs` set preloaded from a single `git for-each-ref refs/heads/ refs/remotes/` call (see Performance section) — `refs/remotes/` for normal remote-tracking upstreams, `refs/heads/` because an upstream can also be a local branch (`branch.<name>.remote = .`, e.g. after `git branch --track a b`).
 
+Branch names come from `%(refname)` with `refs/heads/` stripped, and the checked-out branch from `git symbolic-ref --quiet HEAD`, likewise stripped. The shortening forms (`%(refname:short)`, `symbolic-ref --short`) emit the shortest *unambiguous* name, so a repo holding both `refs/heads/topic` and `refs/tags/topic` yields `heads/topic` — a name that misses every `arc_by_name` lookup, lands in the archive as a bogus entry if written, and makes `git branch -D` fail. `update`, `status`, and `prune` all strip the prefix themselves.
+
 This approach is more robust than checking `%(upstream:track)` for the string `[gone]` because:
 - `[gone]` can vary by git version or locale
 - The ref-existence check is a direct, binary fact about the ref store
@@ -398,14 +400,31 @@ fi
 
 ### `arx prune`
 
-Finds all archived branches that still exist as local branches, then deletes them.
+Finds all local branches whose current commit is in the archive, then deletes them.
 
-Both halves are bulk operations: local branches are loaded once into a `local_branches` set with a single `git for-each-ref refs/heads/` call (the per-archive-entry existence check is a hash lookup, not a `git rev-parse --verify` subprocess), and the deletion is a single `git branch -D b1 b2 ...` call for the whole batch – git itself prints the per-branch `Deleted branch ... (was ...).` lines.
+The loop walks **local branches**, classifying each by the SHA it points at now. It uses the same three inputs `status` and `update` do: the `arc_by_name` / `arc_by_sha` index pair, and the `existing_refs` set that tells a live `%(upstream)` from a deleted one.
+
+| Name in archive | Commit in archive | Upstream | Outcome |
+|---|---|---|---|
+| at this SHA | – | any | Delete |
+| at another SHA | yes, under another name | not live | Delete, labelled `branch (archived as "other")` |
+| no | yes, under another name | gone | Delete, labelled `branch (archived as "other")` |
+| yes, any SHA | no | not live | **Conflict** – skipped, exit 1 |
+| *anything else* | | | Ignored silently |
+
+An exact name+SHA match is an unconditional delete: that commit is in the archive under that very name, so the deletion costs nothing.
+
+The two **"archived as"** rows cover the case where only the commit matches, not the name. The commit is reachable from `refs/arx/<other-name>` either way, so what deletion costs is the branch *name* — restore comes back under the archived name, which is why the label spells that name out before the user types `yes`. Matching on the commit alone would be too loose, though: a default branch sitting on the tip of a fast-forward-merged feature branch also matches `arc_by_sha` and must not be touched. So the row additionally requires evidence that *this* branch was archived — either its name is in the archive, or its upstream is configured and gone, the state `update` reports as "already safe". A live upstream disqualifies it outright.
+
+The **conflict** row is the one that must not delete: the branch has moved past its archived SHA and its current commit is in no entry at all, so `git branch -D` would make it unreachable. Branches with a live upstream are excluded — their commits are on the remote, and `update` does not act on them either. Exiting 1 for skipped conflicts matches `update` and `sync`.
+
+Both halves are bulk operations: one `git for-each-ref refs/heads/` call supplies every branch name, SHA, and upstream (the archive lookups are hash hits, not `git rev-parse --verify` subprocesses), and the deletion is a single `git branch -D b1 b2 ...` call for the whole batch – git itself prints the per-branch `Deleted branch ... (was ...).` lines. The `existing_refs` load adds one further `for-each-ref`, for three subprocesses total regardless of branch count.
 
 Key behaviors:
-- The currently checked-out branch is always skipped (git would reject the deletion anyway). It is listed separately in the output with a "Skipped (currently checked out)" notice.
+- The currently checked-out branch is always skipped (git would reject the deletion anyway) and listed separately with a "Skipped (currently checked out)" notice. This takes precedence over conflict classification, so a branch that has moved past its archived SHA while checked out is a skip, not a failure.
 - Without `--force`, the full list is printed and the user must type `"yes"` to proceed. This is intentional – `git branch -D` is irreversible from git's perspective (the archive is the only recovery path).
-- `--dry-run` prints the same list and count as a real run but skips the confirmation prompt and does not delete anything.
+- `--dry-run` prints the same list and count as a real run but skips the confirmation prompt and does not delete anything. The `(dry run – no changes written)` marker terminates every exit path, including the ones that delete nothing, and conflicts still exit 1.
+- Output is in `for-each-ref`'s refname order.
 
 ### `arx sync` – Union Merge Algorithm
 
@@ -479,7 +498,8 @@ test_update        git arx update (--dry-run, --force, conflicts, already-safe)
 test_sort_tiebreak name tiebreak when sorting by date
 test_log           git arx log (passthrough flags)
 test_checkout      git arx checkout (restore, gc'd commit)
-test_prune         git arx prune (--dry-run, --force, current branch skipped)
+test_prune         git arx prune (--dry-run, --force, current branch skipped,
+                   archived-under-other-name, SHA conflict not deleted)
 test_merge         git arx merge (dedup, conflicts)
 test_refs_backend  refs-only storage
 test_both_backend  both backends enabled (union reads, sync)

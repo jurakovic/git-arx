@@ -233,7 +233,7 @@ Run `git arx prune` to delete the archived branches from your local repo.
 
 ### `git arx prune`
 
-Delete all local branches that are currently in the archive. Prompts for confirmation before proceeding.
+Delete all local branches whose current commit is in the archive. Prompts for confirmation before proceeding.
 
 ```bash
 git arx prune
@@ -249,7 +249,29 @@ git arx prune
 # Done. Deleted 2 branch(es).
 ```
 
-If you are currently checked out on an archived branch, it is skipped with a notice.
+A branch is matched by **commit**, not by name – the same rule `status` and `update` use. This has two consequences.
+
+A branch whose commit is archived under a **different name** is deleted, because the commit is already safe under that other name. The name change is shown in the list so you see it before confirming – after deletion, the branch is restorable only under the archived name:
+
+```
+# The following local branches will be permanently deleted:
+#   feature/my-feature (archived as "feature/my-feature-old")
+```
+
+A branch that merely happens to sit on the same commit as an archived branch – your default branch after a fast-forward merge, for instance – is left alone. To be deleted this way, the branch has to have been archived itself: either it is already in the archive under its own name, or its remote branch was deleted (the `update` "already safe" case).
+
+A branch whose **name** is in the archive but which has moved on to a commit that is in no archive entry at all is *not* deleted – deleting it would lose those commits for good. It is reported as a conflict and skipped, and the command exits non-zero:
+
+```
+# Skipped (archived at a different SHA – re-archive with "git arx add <branch> --force"):
+#   feature/my-feature (archived: a1b2c3d4, current: deadbeef)
+#
+# Done. Deleted 2 branch(es), 1 conflict(s) skipped.
+```
+
+Run `git arx add <branch> --force` to re-archive it at its current SHA, then prune again. If several branches are affected and their remotes are gone, `git arx update --force` re-archives them in one go.
+
+Branches that are not in the archive at all are left alone silently, as are branches whose remote branch still exists. If you are currently checked out on an archived branch, it is skipped with a notice – including when it has moved past its archived SHA.
 
 **Options:**
 
