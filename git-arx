@@ -12,27 +12,132 @@ VERSION="dev"
 # --- CONFIG HELPERS ----------------------------------------------------------
 
 _arx_require_git() {
-    if ! git rev-parse --git-dir > /dev/null 2>&1; then
-        printf 'git-arx: not inside a git repository\n' >&2
+    # Locate the repository, setting ARX_GIT_ROOT. One rev-parse answers both
+    # questions at once – whether this is a repository at all, and where its
+    # root is – because starting a git process costs far more than either
+    # answer.
+    local out
+    if ! out=$(git rev-parse --git-dir --show-toplevel 2>/dev/null); then
+        # rev-parse answers argument by argument, so in a bare repository it
+        # has already printed the git dir before --show-toplevel fails. Empty
+        # output means it never got that far: there is no repository here.
+        if [[ -n "$out" ]]; then
+            printf 'git-arx: this command must run inside a work tree (not a bare repository)\n' >&2
+        else
+            printf 'git-arx: not inside a git repository\n' >&2
+        fi
         exit 1
     fi
+    ARX_GIT_ROOT="${out##*$'\n'}"   # second line: the work tree root
 }
 
-_arx_git_root() {
-    git rev-parse --show-toplevel
+_arx_bool() {
+    # Normalize a git boolean into REPLY, the way `git config --type=bool`
+    # does. Assigns rather than prints: capturing output would cost the
+    # subprocess this whole code path exists to avoid.
+    local value="${1,,}" valueless="$2" default="$3"
+    local sign literal digits cap factor magnitude limit
+
+    # A key named with no value at all is git's implicit true; an explicitly
+    # empty value is false.
+    if [[ "$valueless" == "true" ]]; then
+        REPLY="true"
+        return 0
+    fi
+    case "$value" in
+        true|yes|on)     REPLY="true" ;;
+        false|no|off|'') REPLY="false" ;;
+        *)
+            # git's boolean parser falls back to its integer parser, so every
+            # number is also a boolean: non-zero true, zero false. Numbers use
+            # C literal rules – leading whitespace is skipped, 0x… is hex, a
+            # leading 0 is octal (so 010 is 8 while 08 is not a number at all)
+            # – followed by an optional k/m/g multiplier.
+            if [[ ! "$value" =~ ^[[:space:]]*([-+]?)(0x[0-9a-f]+|0[0-7]*|[1-9][0-9]*)([kmg]?)$ ]]; then
+                # Not a boolean at all – git itself would reject the value.
+                # Fall back to the key's default rather than abort: a typo in
+                # one setting should not make every command unusable.
+                REPLY="$default"
+                return 0
+            fi
+            sign="${BASH_REMATCH[1]}"
+            literal="${BASH_REMATCH[2]}"
+            case "${BASH_REMATCH[3]}" in
+                k) factor=1024 ;;
+                m) factor=$(( 1024 * 1024 )) ;;
+                g) factor=$(( 1024 * 1024 * 1024 )) ;;
+                *) factor=1 ;;
+            esac
+
+            # Bash arithmetic wraps at 64 bits silently, so an over-long
+            # literal would evaluate to an arbitrary in-range value and pass
+            # the range check below – screen it out on digit count first.
+            case "$literal" in
+                0x*) digits="${literal#0x}"; cap=8  ;;
+                0*)  digits="$literal";      cap=11 ;;
+                *)   digits="$literal";      cap=10 ;;
+            esac
+            if [[ "$digits" =~ ^0*([0-9a-f]+)$ ]]; then
+                digits="${BASH_REMATCH[1]}"     # significant digits only
+            fi
+            if (( ${#digits} > cap )); then
+                REPLY="$default"
+                return 0
+            fi
+
+            magnitude=$(( literal ))
+            limit=2147483647
+            [[ "$sign" == "-" ]] && limit=2147483648
+
+            # Divide rather than multiply: the product would overflow for the
+            # very values this is meant to reject.
+            if (( magnitude > limit / factor )); then
+                REPLY="$default"
+            elif (( magnitude != 0 )); then
+                REPLY="true"
+            else
+                REPLY="false"
+            fi
+            ;;
+    esac
 }
 
 _arx_load_config() {
     # Read all arx.* config once at startup – every later access is a plain
-    # variable read instead of a git config subprocess per call.
-    # --type=bool normalizes all git boolean spellings (yes/on/1/...) to true/false
-    ARX_STOREREFS=$(git config --type=bool --get arx.storerefs 2>/dev/null || printf 'true')
-    ARX_STOREFILE=$(git config --type=bool --get arx.storefile 2>/dev/null || printf 'false')
-    local filename
-    filename=$(git config --get arx.filepath 2>/dev/null || printf '.gitarchive')
+    # variable read instead of a git config subprocess per call. One
+    # --get-regexp returns all four keys, so the whole of startup's config
+    # handling costs a single git process.
+    local storerefs="true" storefile="false" filename=".gitarchive"
+    local refsprefix="refs/arx/"
+    local record key value valueless
+    # -z separates records with NUL and key from value with a newline, so
+    # values containing spaces or newlines survive intact. A record with no
+    # newline at all is a key written without a value.
+    while IFS= read -r -d '' record; do
+        if [[ "$record" == *$'\n'* ]]; then
+            key="${record%%$'\n'*}"
+            value="${record#*$'\n'}"
+            valueless="false"
+        else
+            key="$record"
+            value=""
+            valueless="true"
+        fi
+        # Later definitions win, matching how `git config --get` resolves a key
+        # set in more than one scope.
+        case "$key" in
+            arx.storerefs)  _arx_bool "$value" "$valueless" "true";  storerefs="$REPLY" ;;
+            arx.storefile)  _arx_bool "$value" "$valueless" "false"; storefile="$REPLY" ;;
+            arx.filepath)   filename="$value" ;;
+            arx.refsprefix) refsprefix="$value" ;;
+        esac
+    done < <(git config -z --get-regexp '^arx\.' 2>/dev/null || true)
+
+    ARX_STOREREFS="$storerefs"
+    ARX_STOREFILE="$storefile"
     # Resolve relative to repo root, not $PWD
     ARX_FILE="${ARX_GIT_ROOT}/${filename}"
-    ARX_REFSPREFIX=$(git config --get arx.refsprefix 2>/dev/null || printf 'refs/arx/')
+    ARX_REFSPREFIX="$refsprefix"
     # A misconfigured prefix fails silently: a ref written under a prefix that
     # `git for-each-ref <prefix>` can't match back is invisible to every read
     # (the write succeeds, listings come up empty). Enforce the documented
@@ -1527,8 +1632,7 @@ main() {
         upgrade)      cmd_upgrade "$@"; return 0 ;;
     esac
 
-    _arx_require_git
-    ARX_GIT_ROOT=$(_arx_git_root)
+    _arx_require_git    # sets ARX_GIT_ROOT
     _arx_load_config
 
     case "$cmd" in

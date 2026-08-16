@@ -104,15 +104,27 @@ This is important for a tool that writes to storage – silent failures would co
 
 ```bash
 main() {
-    _arx_require_git
-    ARX_GIT_ROOT=$(_arx_git_root)
+    _arx_require_git    # sets ARX_GIT_ROOT
+    _arx_load_config
     ...
 }
 ```
 
-`ARX_GIT_ROOT` is set once at startup and used by `_arx_load_config()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git arx list` works correctly regardless of which subdirectory the user is in when they run it.
+Startup costs exactly two git subprocesses, which matters because on Windows a git process costs more than most commands' actual work (see [Benchmarking](#benchmarking)).
 
-`_arx_load_config()` runs right after, reading all `arx.*` settings into globals in one pass: `ARX_STOREREFS`, `ARX_STOREFILE`, `ARX_FILE` (full archive path), `ARX_REFSPREFIX`, and `ARX_REMOTE_PREFIX` (the remote-tracking namespace derived from the refs prefix). Everything downstream reads these variables directly – config is never re-read during a run. Before this, each `_arx_config_*` helper spawned a `git config` subprocess per call; a single `_arx_write` cost four of them, so `arx update` archiving N branches paid ~4N subprocesses for values that cannot change mid-run.
+**`_arx_require_git()`** runs `git rev-parse --git-dir --show-toplevel`, answering in one call both whether this is a repository and where its root is; `ARX_GIT_ROOT` is the second output line. `rev-parse` answers argument by argument, so a bare repository prints the git dir and *then* fails on `--show-toplevel` — non-empty output on failure is what distinguishes "bare repository" from "no repository here", and each gets its own message.
+
+`ARX_GIT_ROOT` is used by `_arx_load_config()` to resolve the archive path relative to the repo root rather than the current working directory. This means `git arx list` works correctly regardless of which subdirectory the user is in when they run it.
+
+**`_arx_load_config()`** runs right after, reading every `arx.*` setting with a single `git config -z --get-regexp '^arx\.'` into globals: `ARX_STOREREFS`, `ARX_STOREFILE`, `ARX_FILE` (full archive path), `ARX_REFSPREFIX`, and `ARX_REMOTE_PREFIX` (the remote-tracking namespace derived from the refs prefix). Everything downstream reads these variables directly – config is never re-read during a run.
+
+`-z` output separates records with NUL and the key from its value with a newline, so values containing spaces or newlines survive parsing intact, and a record with no newline at all is a key written without a value. Keys are matched in output order and later definitions overwrite earlier ones, which reproduces how `git config --get` resolves a key set in more than one scope.
+
+**`_arx_bool()`** reproduces `git config --type=bool` for `arx.storerefs` and `arx.storefile`, the two keys that decide which storage backends a command writes to – a value git reads as false must not be read here as true. It follows git's two stages: the names `true`/`yes`/`on` and `false`/`no`/`off` case-insensitively, then git's *integer* parser, since every number is a boolean too (non-zero true, zero false). Numbers follow C literal rules – leading whitespace is skipped, `0x…` is hex, a leading `0` is octal (`010` is 8, while `08` is not a number at all), and a `k`/`m`/`g` suffix multiplies by 1024/1024²/1024³ – and the result must fit in an `int`, so `3g` and `9999999999` are not booleans. A key written with no value at all is git's implicit `true`, an explicitly empty value is `false`, and anything git would reject keeps the key's default rather than aborting, since a typo in one setting should not make every command unusable.
+
+Bash arithmetic is 64-bit where git's target is a 32-bit `int`, and it wraps silently rather than failing, so an over-long literal would evaluate to an arbitrary in-range value and pass the range check. Literals are therefore screened on significant digit count before evaluation (at most 10 decimal, 11 octal or 8 hex, none of which can wrap 64 bits), and the `k`/`m`/`g` factor is applied by dividing the limit rather than multiplying the value, which would overflow for exactly the cases being rejected.
+
+`_arx_bool` assigns to `REPLY` rather than printing, because capturing output through a command substitution would cost the subprocess this code path exists to avoid.
 
 Commands that don't apply to the configured storage call `_arx_require_storage` at the top of their function, which prints a descriptive error and exits:
 
@@ -476,6 +488,8 @@ Archived branch names are fetched by calling `git arx list` at tab-press time an
 
 The test suite lives in `test.sh` and is an integration test suite – it runs the actual `git-arx` script against real git repositories created in a temporary directory. No mocking.
 
+The one exception is the boolean sweep in `test_config_bool`, which extracts `_arx_bool` from the script and calls it directly. The value table there is a property of a single pure function, and driving two dozen values through a whole command would cost hundreds of git subprocesses without covering anything the end-to-end cases in the same section already do.
+
 ### Running the tests
 
 ```bash
@@ -507,8 +521,10 @@ test_push_pull     git arx push / fetch / pull (requires a bare remote)
 test_sync          git arx sync (--dry-run, --force-file, --force-refs)
 test_slashed_branches  branch names with slashes
 test_double_add    idempotency of add
-test_config_bool   git boolean spellings (yes/on/1/...) for storage flags
-test_error_cases   unknown commands, missing args, bad config
+test_config_bool   git boolean spellings for storage flags end to end, then a
+                   direct _arx_bool sweep checked against git's own verdict
+test_error_cases   unknown commands, missing args, bad config, running
+                   outside a repo or inside a bare one
 test_overwrite_guard   bytes past the final { main; exit; } are never executed
 ```
 

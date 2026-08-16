@@ -1468,6 +1468,51 @@ test_config_bool() {
         fail "config: arx.storefile=0 should disable file backend"
     fi
 
+    # numeric booleans, checked against git directly (see INTERNALS: Testing)
+    local boolfn="$TMPROOT/arx-bool.sh"
+    sed -n '/^_arx_bool()/,/^}/p' "$ARX" > "$boolfn"
+    # shellcheck source=/dev/null
+    source "$boolfn"
+    if ! declare -F _arx_bool > /dev/null; then
+        fail "config: could not extract _arx_bool from git-arx"
+        set_storage file
+        return 0
+    fi
+
+    # git is the oracle. Both defaults are checked: with only one, "fell back
+    # to the default" would pass as "parsed correctly".
+    local probes="$TMPROOT/bool-probes.config"
+    local -a bool_values=(
+        2 -1 +5 00 000 -0 007 010 0777 0x10 0X10 0x0 1k 2m 0k 3g
+        2147483647 2147483648 -2147483648 -2147483649 2097151k 2097152k
+        0x10000000000000000 18446744073709551616 0777777777777777777777777
+        9999999999g 08 notabool " 1" ""
+    )
+    printf '[probe]\n' > "$probes"
+    local value verdict expected default i=0
+    for value in "${bool_values[@]}"; do
+        printf '\tp%d = "%s"\n' "$i" "$value" >> "$probes"
+        i=$(( i + 1 ))
+    done
+
+    i=0
+    for value in "${bool_values[@]}"; do
+        if ! verdict=$(git config -f "$probes" --type=bool --get "probe.p$i" 2>/dev/null); then
+            verdict=""      # git rejects it; git-arx must use the key's default
+        fi
+        for default in true false; do
+            REPLY=""
+            _arx_bool "$value" false "$default"
+            if [[ -n "$verdict" ]]; then expected="$verdict"; else expected="$default"; fi
+            if [[ "$REPLY" == "$expected" ]]; then
+                pass "config: bool [$value] default=$default -> $expected (matches git)"
+            else
+                fail "config: bool [$value] default=$default should be $expected, got $REPLY"
+            fi
+        done
+        i=$(( i + 1 ))
+    done
+
     set_storage file
 }
 
@@ -1495,6 +1540,15 @@ test_error_cases() {
         "$ARX" merge /dev/null /dev/null -o /dev/null
 
     set_storage file
+
+    # A bare repo is a repo, but has no work tree to resolve the archive path
+    # against – it must say so rather than fall through to a raw git error.
+    local bare="$TMPROOT/bare.git"
+    git init --bare "$bare" -q
+    assert_out   "bare-repo: error"   "must run inside a work tree" \
+        bash -c "cd '$bare' && '$ARX' list"
+    assert_fails "bare-repo: nonzero" \
+        bash -c "cd '$bare' && '$ARX' list"
 }
 
 test_overwrite_guard() {
