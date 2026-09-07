@@ -710,7 +710,11 @@ cmd_status() {
             fi
         fi
 
-        rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$branch" "${sha:0:8}" "${date:0:10}" "$author" "$status")")
+        # DATE column: "YYYY-MM-DD HH:MM:SS" – slice the offset off the
+        # iso-strict timestamp and swap the ISO "T" for a space. The space is
+        # safe in a tab-delimited row, and sorting is unaffected: the separator
+        # sits at a fixed position, so field 3 still orders chronologically.
+        rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$branch" "${sha:0:8}" "${date:0:10} ${date:11:8}" "$author" "$status")")
     done < <(git for-each-ref \
         --format='%(refname)%09%(objectname)%09%(authordate:iso-strict)%09%(authorname)%09%(upstream)' \
         refs/heads/)
@@ -729,10 +733,11 @@ cmd_status() {
             while IFS=' ' read -r sha author_name; do
                 author_by_sha["$sha"]="$author_name"
             done < <(_arx_authors_by_sha "${orphan_shas[@]}")
-            local arc_sha arc_date arc_author
+            local arc_sha arc_date arc_full_date arc_author
             for arc_branch in "${orphan_branches[@]}"; do
                 arc_sha="${arc_by_name[$arc_branch]}"
-                arc_date="${arc_date_by_name[$arc_branch]:0:10}"
+                arc_full_date="${arc_date_by_name[$arc_branch]}"
+                arc_date="${arc_full_date:0:10} ${arc_full_date:11:8}"
                 arc_author="${author_by_sha[$arc_sha]:-"(gc)"}"
                 rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$arc_branch" "${arc_sha:0:8}" "$arc_date" "$arc_author" "Archived")")
             done
@@ -771,11 +776,11 @@ cmd_status() {
     fi
 
     if [[ $show_remote -eq 1 ]]; then
-        printf '%-40s %-9s %-12s %-20s %-30s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS" "REMOTE"
-        printf '%-40s %-9s %-12s %-20s %-30s %s\n' "------" "---" "----" "------" "------" "------"
+        printf '%-40s %-9s %-21s %-20s %-30s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS" "REMOTE"
+        printf '%-40s %-9s %-21s %-20s %-30s %s\n' "------" "---" "----" "------" "------" "------"
     else
-        printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
-        printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
+        printf '%-40s %-9s %-21s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "STATUS"
+        printf '%-40s %-9s %-21s %-20s %s\n' "------" "---" "----" "------" "------"
     fi
     local b s d a st aw saved_lc ac bc colored_st remote_st sw sc scb
     # shellcheck disable=SC2086
@@ -808,9 +813,9 @@ cmd_status() {
             else
                 remote_st="${C_YELLOW}ahead${C_RESET}"
             fi
-            printf "%-40s %-9s %-12s %-${aw}s %-${sw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st" "$remote_st"
+            printf "%-40s %-9s %-21s %-${aw}s %-${sw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st" "$remote_st"
         else
-            printf "%-40s %-9s %-12s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st"
+            printf "%-40s %-9s %-21s %-${aw}s %s\n" "$b" "$s" "$d" "$a" "$colored_st"
         fi
     done < <(printf '%s\n' "${rows[@]}" | sort -t$'\t' $sort_keys)
 }
@@ -897,14 +902,14 @@ cmd_list() {
 
     # Print header and table
     if [[ $show_author -eq 1 && $show_remote -eq 1 ]]; then
-        printf '%-40s %-9s %-12s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "REMOTE"
-        printf '%-40s %-9s %-12s %-20s %s\n' "------" "---" "----" "------" "------"
+        printf '%-40s %-9s %-21s %-20s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR" "REMOTE"
+        printf '%-40s %-9s %-21s %-20s %s\n' "------" "---" "----" "------" "------"
     elif [[ $show_author -eq 1 ]]; then
-        printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR"
-        printf '%-40s %-9s %-12s %s\n' "------" "---" "----" "------"
+        printf '%-40s %-9s %-21s %s\n' "BRANCH" "SHA" "DATE" "AUTHOR"
+        printf '%-40s %-9s %-21s %s\n' "------" "---" "----" "------"
     elif [[ $show_remote -eq 1 ]]; then
-        printf '%-40s %-9s %-12s %s\n' "BRANCH" "SHA" "DATE" "REMOTE"
-        printf '%-40s %-9s %-12s %s\n' "------" "---" "----" "------"
+        printf '%-40s %-9s %-21s %s\n' "BRANCH" "SHA" "DATE" "REMOTE"
+        printf '%-40s %-9s %-21s %s\n' "------" "---" "----" "------"
     else
         printf '%-40s %-9s %s\n' "BRANCH" "SHA" "DATE"
         printf '%-40s %-9s %s\n' "------" "---" "----"
@@ -922,13 +927,13 @@ cmd_list() {
             fi
         fi
         if [[ $show_author -eq 1 && $show_remote -eq 1 ]]; then
-            printf '%-40s %-9s %-12s %-20s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-(gc)}" "$remote_st"
+            printf '%-40s %-9s %-21s %-20s %s\n' "$branch" "${sha:0:8}" "${date:0:10} ${date:11:8}" "${author_by_sha[$sha]:-(gc)}" "$remote_st"
         elif [[ $show_author -eq 1 ]]; then
-            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "${author_by_sha[$sha]:-(gc)}"
+            printf '%-40s %-9s %-21s %s\n' "$branch" "${sha:0:8}" "${date:0:10} ${date:11:8}" "${author_by_sha[$sha]:-(gc)}"
         elif [[ $show_remote -eq 1 ]]; then
-            printf '%-40s %-9s %-12s %s\n' "$branch" "${sha:0:8}" "${date:0:10}" "$remote_st"
+            printf '%-40s %-9s %-21s %s\n' "$branch" "${sha:0:8}" "${date:0:10} ${date:11:8}" "$remote_st"
         else
-            printf '%-40s %-9s %s\n' "$branch" "${sha:0:8}" "${date:0:10}"
+            printf '%-40s %-9s %s\n' "$branch" "${sha:0:8}" "${date:0:10} ${date:11:8}"
         fi
     done <<< "$sorted"
 }

@@ -134,17 +134,17 @@ The bash 4+ requirement comes from `declare -A` (associative arrays). On stock m
 
 ### `git arx status`
 
-Show all local branches with no remote upstream – the same set that `git arx update` would process – along with their current SHA, date, author, and archive status. Nothing is written.
+Show all local branches with no remote upstream – the same set that `git arx update` would process – along with their current SHA, commit date and time, author, and archive status. Nothing is written.
 
 Use `--all` / `-a` to also include never-pushed local branches (shown as `Local only`) and archived branches that no longer exist locally. Branches with a live remote upstream are never listed.
 
 ```bash
 git arx status
-# BRANCH                                   SHA       DATE         AUTHOR               STATUS
-# ------                                   ---       ----         ------               ------
-# feature/old-idea                         a1b2c3d4  2025-11-15   Alice Smith          Not archived
-# feature/stashed                          f00dface  2025-11-20   Bob Jones            Archived as "feature/stashed-v1"
-# fix/quick-hack                           deadbeef  2025-10-01   Charlie Brown        Archived
+# BRANCH                                   SHA       DATE                  AUTHOR               STATUS
+# ------                                   ---       ----                  ------               ------
+# feature/old-idea                         a1b2c3d4  2025-11-15 10:30:00   Alice Smith          Not archived
+# feature/stashed                          f00dface  2025-11-20 14:05:12   Bob Jones            Archived as "feature/stashed-v1"
+# fix/quick-hack                           deadbeef  2025-10-01 08:00:00   Charlie Brown        Archived
 ```
 
 The **STATUS** column reflects the current state of each branch in the archive:
@@ -293,10 +293,10 @@ List all archived branches. Alias: `ls`.
 
 ```bash
 git arx list
-# BRANCH                                   SHA       DATE         REMOTE
-# ------                                   ---       ----         ------
-# feature/my-feature                       a1b2c3d4  2025-11-15   pushed
-# fix/old-bug                              deadbeef  2025-10-01   local
+# BRANCH                                   SHA       DATE                  REMOTE
+# ------                                   ---       ----                  ------
+# feature/my-feature                       a1b2c3d4  2025-11-15 10:30:00   pushed
+# fix/old-bug                              deadbeef  2025-10-01 08:00:00   local
 ```
 
 The **REMOTE** column is shown when the refs backend is active (the default). It reflects the last known remote state — updated by `git arx push` and `git arx pull`, with no network call at list time:

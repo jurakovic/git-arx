@@ -1005,6 +1005,9 @@ test_refs_backend() {
     git branch dated-branch "$dated_sha"
     "$ARX" add dated-branch > /dev/null
     assert_out "refs list: shows author date, not committer date" "2020-01-02" "$ARX" list
+    # DATE column renders date and time to the second, offset stripped
+    assert_out "list: DATE shows time to the second" "2020-01-02 03:04:05" "$ARX" list
+    assert_out "status: DATE shows time to the second" "2020-01-02 03:04:05" "$ARX" status --all
     git branch -D dated-branch > /dev/null 2>&1
     git update-ref -d refs/arx/dated-branch
 
