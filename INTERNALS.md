@@ -124,6 +124,8 @@ With neither `arx.storerefs` nor `arx.storefile` enabled, `_arx_load_config` sto
 
 **`_arx_bool()`** reproduces `git config --type=bool` for `arx.storerefs` and `arx.storefile`, the two keys that decide which storage backends a command writes to – a value git reads as false must not be read here as true. It follows git's two stages: the names `true`/`yes`/`on` and `false`/`no`/`off` case-insensitively, then git's *integer* parser, since every number is a boolean too (non-zero true, zero false). Numbers follow C literal rules – leading whitespace is skipped, `0x…` is hex, a leading `0` is octal (`010` is 8, while `08` is not a number at all), and a `k`/`m`/`g` suffix multiplies by 1024/1024²/1024³ – and the result must fit in an `int`, so `3g` and `9999999999` are not booleans. A key written with no value at all is git's implicit `true`, an explicitly empty value is `false`, and anything git would reject keeps the key's default rather than aborting, since a typo in one setting should not make every command unusable.
 
+The range is the full `int` range, -2147483648 included – git's own parser accepts that value since 2.50, which fixed an off-by-one in its negative bound (`-max / factor` became `(-max - 1) / factor`); older versions reject it. `test_config_bool` therefore pins the expected answer for it instead of asking the installed git.
+
 Bash arithmetic is 64-bit where git's target is a 32-bit `int`, and it wraps silently rather than failing, so an over-long literal would evaluate to an arbitrary in-range value and pass the range check. Literals are therefore screened on significant digit count before evaluation (at most 10 decimal, 11 octal or 8 hex, none of which can wrap 64 bits), and the `k`/`m`/`g` factor is applied by dividing the limit rather than multiplying the value, which would overflow for exactly the cases being rejected.
 
 `_arx_bool` assigns to `REPLY` rather than printing, because capturing output through a command substitution would cost the subprocess this code path exists to avoid.
@@ -149,6 +151,8 @@ Reads from configured backend(s) and emits normalized records to stdout, one per
 ```
 <branch-name> <full-sha> <ISO-8601-date>
 ```
+
+Records from the refs backend carry a fourth field, the same date as seconds since the epoch, which `git for-each-ref` supplies for free and `--sort=date` uses; callers that want three fields read it into their last variable (`read -r b sha date rest`) and ignore it.
 
 This is a streaming interface – callers pipe or redirect it with `while read`. No temporary files are needed for reads.
 
@@ -192,21 +196,23 @@ fix/bug-42 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 - Space-delimited, three fields: `branch sha date`
 - Full 40-character SHA (abbreviated SHAs become ambiguous as repos grow)
 - ISO-8601 date with timezone offset from `git log -1 --format=%aI` (author date of HEAD commit)
-- `#` lines are comments, skipped on read
+- `#` lines are comments, skipped on read – unless they have the shape of a record. git allows branch names that begin with `#`, so the shape is tried first: `#hotfix <sha> <date>` is an entry, while the `# git-arx archive` header, whose second word is not a SHA, stays a comment. (Commenting out an entry by prefixing `#` therefore doesn't disable it – remove it instead.)
 - Blank lines are skipped on read
-- Any other line must be a record: `_arx_parse_record` matches it against `ARX_RECORD_RE` – a name, then a full 40- or 64-digit hex SHA (SHA-1 or SHA-256 repositories), then the date. A line that does not match is reported (`file:line: not an archive record`) and skipped.
+- Any other line must be a record: a name, then a full 40- or 64-digit hex SHA (`_arx_is_sha`; SHA-1 or SHA-256 repositories), then the date. A line that does not match is reported (`file:line: not an archive record`) and skipped.
 
-That validation is a security boundary, not tidiness. The file is meant to be committed and shared, so its contents are untrusted input, and the SHA field is later handed to git – `list --author` and `status --all` look up authors with `git log`, where an entry like `evil --output=/home/you/.bashrc ...` would be an option that overwrites the file. Checking every SHA once in `_arx_file_read` protects every consumer; `_arx_authors_by_sha` additionally passes SHAs on stdin (`git log --stdin`), where git refuses anything option-shaped and there is no command-line length limit to hit. `_arx_parse_record` assigns `ARX_NAME`, `ARX_SHA` and `ARX_DATE` rather than printing them, because it runs once per line and capturing output would cost a subshell each time. It also lowercases the SHA and strips the `\r` a CRLF checkout leaves at the end of each line.
+That validation is a security boundary, not tidiness. The file is meant to be committed and shared, so its contents are untrusted input, and the SHA field is later handed to git – `list --author` and `status --all` look up authors with `git log`, where an entry like `evil --output=/home/you/.bashrc ...` would be an option that overwrites the file. Checking every SHA once in `_arx_file_read` protects every consumer; `_arx_authors_by_sha` additionally passes SHAs on stdin (`git log --stdin`), where git refuses anything option-shaped and there is no command-line length limit to hit. Fields are split by `read` itself, with `\r` added to `IFS` so the line ending a CRLF checkout leaves (`core.autocrlf` on Windows) falls away, and SHAs are lowercased. `_arx_file_read` splits in its own `while read` loop rather than matching a regex per line – it runs for every line on every read, and a regex with 40- and 64-digit intervals made reads ten times slower than the unvalidated loop they replaced; field splitting costs about twice that loop. `_arx_is_record` applies the same split to a single line, for `_arx_file_apply`, which calls it only for lines whose first word is a name being written or deleted.
 
 The format is intentionally simple. Since git branch names cannot contain spaces (git itself rejects them), space as delimiter is unambiguous and requires no quoting or escaping.
 
 ### Atomic Writes
 
-The file is never modified in place. Every write uses a filter-then-append pattern:
+The file is never modified in place. Every change goes through `_arx_file_apply`, which takes a batch on stdin – `<name> <sha> <date>` lines to write, bare `<name>` lines to delete – and uses a filter-then-append pattern:
 
-1. Read the full archive into a temp file (`${archive}.tmp.$$`), skipping the entry being updated
-2. Append the new entry to the temp file
+1. Read the full archive into a temp file (`${archive}.tmp.$$`), skipping every record (recognized by `_arx_is_record`, as on read) whose name is in the batch – comments, blank lines and other records are copied verbatim
+2. Append the batch's new records to the temp file
 3. Replace the archive with the temp file
+
+`_arx_file_write`, `_arx_file_write_bulk` and `_arx_file_delete` – the backend interface the abstraction layer calls – are one-line wrappers around it, and `sync` hands it all of its file changes at once. One rewrite per batch keeps bulk writes linear; a rewrite per entry would be O(n²) in the archive size.
 
 The temp file name uses `$$` (the shell's PID) to avoid collisions if multiple instances run simultaneously (unlikely for an interactive CLI, but safe practice).
 
@@ -227,7 +233,7 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 - The git object itself still exists in the repository (until gc) – the SHA in the record is the real audit trail
 - Keeping deleted entries would mean the file grows unboundedly
-- `_arx_file_write` already implements filter-then-append, so delete is just filter-without-append – no new code path
+- `_arx_file_apply` already implements filter-then-append, so delete is just filter-without-append – no new code path
 
 ---
 
@@ -235,7 +241,7 @@ Deleted entries are removed from the file entirely, not marked with a prefix lik
 
 ### Namespace
 
-Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` once at startup into `ARX_REFSPREFIX` (see `_arx_load_config()`), which also validates it: the value must name a namespace under `refs/` (a bare `refs/` or a prefix outside `refs/` aborts with an error, since it would make `git for-each-ref` match refs outside the archive), and a missing trailing `/` is appended automatically.
+Archived branches are stored as git refs under a configurable prefix, defaulting to `refs/arx/`. For a branch named `feature/login`, the default ref path is `refs/arx/feature/login`. The prefix is read from `arx.refsprefix` once at startup into `ARX_REFSPREFIX` (see `_arx_load_config()`), which also validates it: the value must name a namespace under `refs/` (a bare `refs/` or a prefix outside `refs/` aborts with an error, since it would make `git for-each-ref` match refs outside the archive), and a missing trailing `/` is appended automatically. The namespace must also be git-arx's own: a prefix inside `refs/heads/`, `refs/tags/`, `refs/remotes/`, `refs/notes/`, `refs/replace/`, `refs/stash/`, `refs/bisect/`, `refs/worktree/`, `refs/rewritten/` or `refs/prefetch/` aborts too. Everything under the prefix is taken to be the archive, so `prune` would delete local branches matching the "archive" and `purge` would delete every such ref on the remote – with `refs/heads/`, all branches, with nothing left to restore from.
 
 Git ref names allow forward slashes and use them to create directory structure. `refs/arx/feature/login` is stored as the file `.git/refs/arx/feature/login`. This is the same mechanism used by `refs/remotes/origin/feature/login` – no special handling is needed.
 
@@ -251,7 +257,7 @@ The refs backend does not store dates explicitly – the date is read from the c
 
 ```bash
 git for-each-ref \
-    --format='%(refname) %(objectname) %(authordate:iso-strict)' \
+    --format='%(refname) %(objectname) %(authordate:iso-strict) %(authordate:unix)' \
     "$refsprefix"
 ```
 
@@ -269,11 +275,11 @@ git push origin 'refs/arx/*:refs/arx/*'
 
 This pushes all refs under the prefix to the same path on the remote. Supported by GitHub, GitLab, Gitea, and Bitbucket.
 
-After a successful push, `arx push` updates a local remote-tracking namespace derived from `arx.refsprefix` — e.g. `refs/arx/` → `refs/arx-remote/origin/`. Each pushed ref is mirrored there via `git update-ref` so that `arx list` and `arx status --all` can report an accurate `REMOTE` column without a network call.
+After a push, `arx push` updates a local remote-tracking namespace derived from `arx.refsprefix` — e.g. `refs/arx/` → `refs/arx-remote/origin/` — so that `arx list` and `arx status --all` can report an accurate `REMOTE` column without a network call. The push runs with `--porcelain`, which reports every ref's outcome as `<flag>\t<from>:<to>\t<summary>`, and tracking refs follow exactly what the remote accepted: refs pushed or already up to date are mirrored at their local SHA, deleted ones are dropped, rejected ones keep their old tracking value. A push is not all-or-nothing – a ref re-archived at a commit that doesn't descend from the remote copy is rejected while the rest go through – and updating tracking only after a fully successful push left the accepted refs showing as `local`. (`--atomic` would make it all-or-nothing instead, but requires server support and blocks every ref on one rejection.) The porcelain output is turned into git-arx's own `Pushed:` / `Rejected:` lines; git's advice for rejected refs (`git pull`) is switched off with `-c advice.pushUpdateRejected=false`, since it points at the wrong command here. All tracking updates go through one `git update-ref --stdin`.
 
 `arx push --delete <branch>` deletes a single ref from the remote using `git push origin --delete refs/arx/<branch>`, then removes the corresponding local remote-tracking ref.
 
-`arx push --prune` adds `--prune` to the glob refspec push, which causes git to delete any remote refs under the prefix that have no local counterpart. After the push, the local remote-tracking namespace is rebuilt from scratch to match the new remote state (delete all tracking refs, then re-mirror from current local refs).
+`arx push --prune` adds `--prune` to the glob refspec push, which causes git to delete any remote refs under the prefix that have no local counterpart. Tracking refs follow the porcelain report as above, and when the push succeeded completely the remote holds exactly the local archive, so any remaining tracking ref without a local counterpart is dropped too.
 
 `arx purge` deletes **every** `refs/arx/*` ref the remote holds, independent of the local archive — the unconditional counterpart to `--prune`'s "delete what has no local counterpart". It enumerates the remote refs with `git ls-remote origin 'refs/arx/*'` (no objects transferred), deletes them all in a single `git push origin --delete <ref>...`, then drops every local remote-tracking ref since the remote now holds none. It exists for the "remote as a transfer channel" workflow: secondaries `push`, the primary `pull`s, and `purge` clears the remote so it never accumulates an archive. Confirmation-gated like `prune` (bypass with `--force`); `--dry-run` lists the remote refs without deleting.
 
@@ -323,7 +329,7 @@ Both commands use `%(upstream)` from `git for-each-ref` to classify local branch
 
 The existence check is a lookup in an `existing_refs` set preloaded from a single `git for-each-ref refs/heads/ refs/remotes/` call (see Performance section) — `refs/remotes/` for normal remote-tracking upstreams, `refs/heads/` because an upstream can also be a local branch (`branch.<name>.remote = .`, e.g. after `git branch --track a b`).
 
-Branch names come from `%(refname)` with `refs/heads/` stripped, and the checked-out branch from `git symbolic-ref --quiet HEAD`, likewise stripped. The shortening forms (`%(refname:short)`, `symbolic-ref --short`) emit the shortest *unambiguous* name, so a repo holding both `refs/heads/topic` and `refs/tags/topic` yields `heads/topic` — a name that misses every `arc_by_name` lookup, lands in the archive as a bogus entry if written, and makes `git branch -D` fail. `update`, `status`, and `prune` all strip the prefix themselves.
+Branch names come from `%(refname)` with `refs/heads/` stripped (and `prune` tells checked-out branches by `%(worktreepath)`, not by name). The shortening forms (`%(refname:short)`, `symbolic-ref --short`) emit the shortest *unambiguous* name, so a repo holding both `refs/heads/topic` and `refs/tags/topic` yields `heads/topic` — a name that misses every `arc_by_name` lookup, lands in the archive as a bogus entry if written, and makes `git branch -D` fail. `update`, `status`, and `prune` all strip the prefix themselves.
 
 This approach is more robust than checking `%(upstream:track)` for the string `[gone]` because:
 - `[gone]` can vary by git version or locale
@@ -342,7 +348,7 @@ Note: `git remote prune origin` removes the remote tracking ref (`refs/remotes/o
 
 `arx status` accepts `--sort=name|date` and `--order=asc|desc`. The default sort is `name`; the default order depends on the sort key — `asc` for name, `desc` for date — unless overridden explicitly. When sorting by date, name is used as a tiebreaker. Rows are collected first, then sorted as a post-processing step before printing. `arx list` uses the same sort/order logic.
 
-**DATE column.** Both `arx status` and `arx list` render the stored ISO-8601 timestamp as `YYYY-MM-DD HH:MM:SS` in a `%-21s` field, built inline as `${date:0:10} ${date:11:8}` — the two slices drop the trailing UTC offset and replace the ISO `T` with a space. The time shown is therefore the one recorded on the commit — the author's local time, not the viewer's. The space is safe in both call sites: `arx status` carries rows as tab-delimited fields (`sort -t$'\t'`), and `arx list` passes the value as a single `printf` argument. Sorting: `arx list` orders the stored records on field 3, the full timestamp, and reformats only when printing. `arx status` builds its rows with the date already reformatted, so it sorts on `YYYY-MM-DD HH:MM:SS` — the separator sits at a fixed position, so ordering is chronological, and same-day entries order by time of day, tiebroken by name.
+**DATE column.** Both `arx status` and `arx list` render the stored ISO-8601 timestamp as `YYYY-MM-DD HH:MM:SS` in a `%-21s` field, built inline as `${date:0:10} ${date:11:8}` — the two slices drop the trailing UTC offset and replace the ISO `T` with a space. The time shown is therefore the one recorded on the commit — the author's local time, not the viewer's. The space is safe in both call sites: `arx status` carries rows as tab-delimited fields (`sort -t$'\t'`), and `arx list` passes the value as a single `printf` argument. Sorting never uses the displayed text. Stored dates keep the author's own UTC offset, so as text `10:00+09:00` sorts after `02:00+00:00` although it happened an hour earlier – entries from a team across timezones, or across a DST change, would interleave by clock reading. `--sort=date` sorts numerically on seconds since the epoch instead. Wherever git is already listing the refs, it supplies them for free as `%(authordate:unix)`: for local branches in `arx status`'s `for-each-ref`, and for refs-backend records as the fourth field `_arx_refs_read` emits. Only records from the file need computing, which `_arx_epoch` does in pure bash arithmetic (days-from-civil, no `date` process) – for `arx list`, which appends the key as field 4 (and skips that pass entirely when the file backend is off), and for the archive-only rows of `status --all`. Ties are broken by name. Status rows are built with `printf -v` rather than `$(printf ...)`, which would fork a subshell per branch inside the loop the bulk optimizations keep free of processes.
 
 **Color output.** Both `arx status` and `arx list` emit ANSI color codes only when stdout is a terminal (`[[ -t 1 ]]`). Piped or redirected output is always plain text. `arx status` colors the STATUS column: red (`Not archived`), green (`Archived`), light blue / bright cyan (`Archived as "..."`), yellow (`Conflict`), dim (`Local only`). Both commands color the REMOTE column: green (`pushed`), yellow (`ahead`), red (`local`), cyan (`remote`), dim (`-`).
 
@@ -359,14 +365,14 @@ For repos with many branches or archived entries, naive per-branch subprocess ca
 2. **Single `git for-each-ref` call** – a single call retrieves branch name, SHA, author date, and (for `status`) author name for every branch at once, replacing per-branch `git rev-parse` and `git log` calls:
 
 ```bash
-# arx status (includes authorname for display)
+# arx status (includes the date as a sort key, and authorname for display)
 git for-each-ref \
-    --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(authorname)%09%(upstream)' \
+    --format='%(refname)%09%(objectname)%09%(authordate:iso-strict)%09%(authordate:unix)%09%(authorname)%09%(upstream)' \
     refs/heads/
 
 # arx update (authorname not needed)
 git for-each-ref \
-    --format='%(refname:short)%09%(objectname)%09%(authordate:iso-strict)%09%(upstream)' \
+    --format='%(refname)%09%(objectname)%09%(authordate:iso-strict)%09%(upstream)' \
     refs/heads/
 ```
 
@@ -396,6 +402,8 @@ Before writing, `add` scans `_arx_read_all` once, resolving two things in the sa
 2. **Archived with same SHA** – exit 0 with `Already archived:`. Idempotent; safe to call repeatedly.
 3. **Archived with different SHA** – conflict. Exit 1 with an error and hints. `--force` overwrites; an `archive-name` argument stores under a different name instead.
 4. **Not archived by target name, but SHA already present under a different name** – the same-pass reverse lookup finds the duplicate. Prints a `Note:` line, then writes anyway (the user explicitly requested this archive entry).
+
+An `archive-name`, like `rename`'s new name, is checked by `_arx_require_valid_name` before anything is written: it becomes a ref under the prefix, a branch on `checkout`, and a whitespace-delimited field in the file, so it must be a valid branch name – `git check-ref-format refs/heads/<name>`, plus no leading `-`. Without the check, `my old feat` was stored as a file record that reads back as branch `my`, SHA `old`.
 
 `arx update` applies the same conflict logic for every candidate branch, using the in-memory `arc_by_name` and `arc_by_sha` maps (see Performance section). If the current SHA is already stored under a different name, the branch is skipped with an `Already safe:` message and counted separately in the summary. This prevents silent duplicate SHA storage during automatic archiving. If the user wants the branch indexed under its natural name too, they can run `git arx add <branch>` explicitly.
 
@@ -455,7 +463,7 @@ The **conflict** row is the one that must not delete: the branch has moved past 
 Both halves are bulk operations: one `git for-each-ref refs/heads/` call supplies every branch name, SHA, and upstream (the archive lookups are hash hits, not `git rev-parse --verify` subprocesses), and the deletion is a single `git branch -D b1 b2 ...` call for the whole batch – git itself prints the per-branch `Deleted branch ... (was ...).` lines. The `existing_refs` load adds one further `for-each-ref`, for three subprocesses total regardless of branch count (four with both backends enabled, which read the refs once more on their own).
 
 Key behaviors:
-- The currently checked-out branch is always skipped (git would reject the deletion anyway) and listed separately with a "Skipped (currently checked out)" notice. This takes precedence over conflict classification, so a branch that has moved past its archived SHA while checked out is a skip, not a failure.
+- A branch checked out in any worktree is always skipped (git would reject the deletion anyway) and listed separately with a "Skipped (currently checked out)" notice; branches checked out in another worktree are labelled with its path. `%(worktreepath)` in the branch `for-each-ref` supplies this, replacing a separate `git symbolic-ref HEAD` for the current branch – which missed other worktrees, so the single `git branch -D` for the batch failed partway. Because `%(upstream)` and `%(worktreepath)` can both be empty, this call separates fields with `\x1f` (`%1f`) rather than tab: a non-whitespace IFS character never collapses, so empty fields stay in place. The skip takes precedence over conflict classification, so a branch that has moved past its archived SHA while checked out is a skip, not a failure.
 - Without `--force`, the full list is printed and the user must type `"yes"` to proceed. This is intentional – `git branch -D` is irreversible from git's perspective (the archive is the only recovery path).
 - `--dry-run` prints the same list and count as a real run but skips the confirmation prompt and does not delete anything. The `(dry run – no changes written)` marker terminates every exit path, including the ones that delete nothing, and conflicts still exit 1.
 - Output is in `for-each-ref`'s refname order.
@@ -484,6 +492,8 @@ for each branch in (refs ∪ file):
 ```
 
 Non-conflicting entries are always processed. A conflict does not block other entries from being synced. After processing all entries, if any conflicts occurred, `sync` exits with status 1.
+
+Every entry is decided first; the writes are then applied in one `git update-ref --stdin` transaction and one `_arx_file_apply` rewrite, refs first. A ref can only point at an object the repository has, and the file may name commits this clone never fetched, so all file SHAs are checked up front with a single `git cat-file --batch-check`. An entry whose commit is missing is skipped and reported (and the exit status is 1), instead of aborting the sync halfway through under `set -e` with whichever entries associative-array order happened to reach first.
 
 **`--dry-run`:** Runs the same comparison logic and prints the same output as a real sync, but skips all writes. A trailing `(dry run – no changes written)` line is appended. Works with or without `--force-file` / `--force-refs` – output shows exactly what would happen if the flag were run without `--dry-run`.
 
@@ -533,17 +543,20 @@ test_rename        git arx rename
 test_list          git arx list (sorting, --author, --storage filter)
 test_update        git arx update (--dry-run, --force, conflicts, already-safe)
 test_sort_tiebreak name tiebreak when sorting by date
+test_sort_time     date sorting by actual time across UTC offsets
 test_log           git arx log (passthrough flags)
 test_checkout      git arx checkout (restore, gc'd commit)
 test_prune         git arx prune (--dry-run, --force, current branch skipped,
-                   archived-under-other-name, SHA conflict not deleted)
+                   archived-under-other-name, SHA conflict not deleted,
+                   branches checked out in other worktrees)
 test_merge         git arx merge (dedup, conflicts)
 test_refs_backend  refs-only storage
 test_both_backend  both backends enabled (union reads, sync)
 test_push_pull     git arx push / fetch / pull (requires a bare remote)
 test_purge         git arx purge (--dry-run, --force, empty remote)
 test_sync          git arx sync (--dry-run, --force-file, --force-refs)
-test_file_records  archive file parsing: malformed and hostile lines
+test_file_records  archive file parsing: malformed and hostile lines,
+                   #-named branches, CRLF line endings
 test_slashed_branches  branch names with slashes
 test_double_add    idempotency of add
 test_config_bool   git boolean spellings for storage flags end to end, then a

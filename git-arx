@@ -158,6 +158,20 @@ _arx_load_config() {
         exit 1
     fi
     [[ "$ARX_REFSPREFIX" == */ ]] || ARX_REFSPREFIX="${ARX_REFSPREFIX}/"
+    # It must also be a namespace of its own. Everything under the prefix is
+    # taken to be the archive: prune deletes local branches that match an
+    # entry, purge deletes every ref under it on the remote. Pointed inside
+    # one of git's namespaces – refs/heads/ above all – both become mass
+    # deletions, and the "archive" is the very refs being deleted.
+    case "$ARX_REFSPREFIX" in
+        refs/heads/*|refs/tags/*|refs/remotes/*|refs/notes/*|refs/replace/*|refs/stash/*|\
+        refs/bisect/*|refs/worktree/*|refs/rewritten/*|refs/prefetch/*)
+            local ns="${ARX_REFSPREFIX#refs/}"
+            printf 'git-arx: arx.refsprefix must be a dedicated namespace, not inside git'"'"'s own refs/%s/ (got: "%s")\n' \
+                "${ns%%/*}" "$ARX_REFSPREFIX" >&2
+            exit 1
+            ;;
+    esac
     ARX_REMOTE_PREFIX="${ARX_REFSPREFIX%/}-remote/origin/"
 }
 
@@ -184,135 +198,128 @@ _arx_require_storage() {
 
 # --- BACKEND: FILE -----------------------------------------------------------
 
-# "<name> <sha> [<date>]": the SHA must be a full 40- or 64-digit hex object
-# name, followed by whitespace or the end of the line.
-ARX_RECORD_RE='^[[:space:]]*([^[:space:]]+)[[:space:]]+([[:xdigit:]]{40}|[[:xdigit:]]{64})([[:space:]]|$)'
-
-_arx_parse_record() {
-    # Split one archive file line into ARX_NAME, ARX_SHA and ARX_DATE, or
-    # return 1 if it is not a record. Globals rather than output: this runs
-    # once per line, and capturing output would cost a subshell each time.
-    [[ "$1" =~ $ARX_RECORD_RE ]] || return 1
-    local rest="${1:${#BASH_REMATCH[0]}}"
-    rest="${rest#"${rest%%[![:space:]]*}"}"   # trim leading whitespace
-    ARX_NAME="${BASH_REMATCH[1]}"
-    ARX_SHA="${BASH_REMATCH[2],,}"
-    ARX_DATE="${rest%%[[:space:]]*}"           # trailing \r of a CRLF file too
+_arx_is_sha() {   # value
+    # A full SHA-1 or SHA-256 object name – 40 or 64 hex digits, nothing else.
+    [[ ( ${#1} -eq 40 || ${#1} -eq 64 ) && "$1" != *[![:xdigit:]]* ]]
 }
 
-_arx_file_read() {
+_arx_is_record() {   # line
+    # Whether one archive file line is a record: "<name> <sha> [<date>]" with
+    # a full hex SHA. Splits exactly as _arx_file_read does – $IFS plus \r,
+    # so a CRLF line ending falls away.
+    local name sha
+    IFS=$' \t\r' read -r name sha _ <<< "$1"
+    _arx_is_sha "$sha"
+}
+
+_arx_file_read() {   # [file] – default: the configured archive file
     # Emit "<name> <sha> <date>" for every record in the archive file. The
     # file is meant to be committed and shared, so its contents are untrusted
     # input: every SHA is checked here, once for all consumers, before any of
     # them reaches git – where a value like --output=<path> would be read as
     # an option, not a revision. Lines that fail the check are reported and
     # skipped.
-    local archive="$ARX_FILE" line n=0
+    #
+    # A line is a record by its shape, tried before the comment rule: git
+    # allows branch names that start with "#", and "#hotfix <sha> <date>" is
+    # such a record, while the "# git-arx archive" header – whose second word
+    # is not a SHA – stays a comment.
+    #
+    # read splits the fields itself (as _arx_is_record does) – this loop
+    # runs for every line on every read, and a regex match per line made it
+    # ten times slower.
+    local archive="${1:-$ARX_FILE}" name sha date n=0
     [[ -f "$archive" ]] || return 0
-    while IFS= read -r line || [[ -n "$line" ]]; do
+    while IFS=$' \t\r' read -r name sha date _ || [[ -n "$name" ]]; do
         n=$(( n + 1 ))
-        [[ "$line" == \#* ]] && continue   # comment
-        if _arx_parse_record "$line"; then
-            printf '%s %s %s\n' "$ARX_NAME" "$ARX_SHA" "$ARX_DATE"
-        elif [[ "$line" == *[![:space:]]* ]]; then
+        if _arx_is_sha "$sha"; then
+            # "-" stands in for a missing date, so the field count holds
+            printf '%s %s %s\n' "$name" "${sha,,}" "${date:--}"
+        elif [[ -n "$name" && "$name" != \#* ]]; then
             printf 'git-arx: %s:%d: not an archive record ("<name> <sha> <date>") – ignored\n' \
                 "$archive" "$n" >&2
         fi
     done < "$archive"
 }
 
-_arx_file_write() {
-    local branch="$1" sha="$2" date="$3"
-    local archive="$ARX_FILE" tmpfile
-    tmpfile="${archive}.tmp.$$"
-    : > "$tmpfile"  # create/truncate up front (the loop below only appends)
-
-    # Start fresh temp file; preserve header comment if archive exists
-    if [[ -f "$archive" ]]; then
-        # Copy header comments, filter out existing entry for this branch
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            if [[ "$line" == \#* || -z "$line" ]]; then
-                printf '%s\n' "$line" >> "$tmpfile"
-            elif [[ "${line%% *}" != "$branch" ]]; then
-                printf '%s\n' "$line" >> "$tmpfile"
-            fi
-        done < "$archive"
-    else
-        printf '# git-arx archive – do not edit manually\n' > "$tmpfile"
-    fi
-
-    printf '%s %s %s\n' "$branch" "$sha" "$date" >> "$tmpfile"
-
-    # MINGW64-safe atomic replace
-    [[ -f "$archive" ]] && rm -f "$archive"
-    mv "$tmpfile" "$archive"
-}
-
-_arx_file_write_bulk() {
-    # Read "branch sha date" records from stdin and write them all in one
-    # filter-then-append pass – a single file rewrite instead of one per entry.
-    local archive="$ARX_FILE" tmpfile line branch sha date rest
-
+_arx_file_apply() {
+    # Apply a batch of changes to the archive file in one filter-then-append
+    # rewrite. Each stdin line is "<name> <sha> <date>" to write that entry,
+    # or a bare "<name>" to delete it. Every existing record for a listed
+    # name is dropped – so a write replaces, and a delete removes duplicates
+    # too – everything else (comments, blank lines, other records) is kept
+    # verbatim, and the written records are appended.
+    local archive="$ARX_FILE" tmpfile line name sha date
     local -a entries=()
-    declare -A incoming=()
-    while IFS=' ' read -r branch sha date rest; do
-        [[ -z "$branch" ]] && continue
-        entries+=("$branch $sha $date")
-        incoming["$branch"]=1
+    declare -A drop=()
+    while IFS=' ' read -r name sha date _; do
+        [[ -z "$name" ]] && continue
+        drop["$name"]=1
+        if [[ -n "$sha" ]]; then
+            entries+=("$name $sha $date")
+        fi
     done
 
-    # No input – leave the file untouched (matches per-entry write semantics)
-    [[ ${#entries[@]} -eq 0 ]] && return 0
+    # Nothing to do: no input, or only deletes from a file that isn't there.
+    [[ ${#drop[@]} -eq 0 ]] && return 0
+    [[ ! -f "$archive" && ${#entries[@]} -eq 0 ]] && return 0
 
     tmpfile="${archive}.tmp.$$"
+    # Create/truncate up front: the loop only appends, and if it filters out
+    # every line, mv would otherwise fail on a missing tmpfile after the
+    # archive was already removed.
     : > "$tmpfile"
     if [[ -f "$archive" ]]; then
-        # Keep comments, blanks, and entries not being overwritten
         while IFS= read -r line || [[ -n "$line" ]]; do
-            if [[ "$line" == \#* || -z "$line" ]]; then
-                printf '%s\n' "$line" >> "$tmpfile"
-            elif [[ -z "${incoming[${line%% *}]+x}" ]]; then
-                printf '%s\n' "$line" >> "$tmpfile"
+            # Cheap test first: only a line whose first word is a listed name
+            # can be dropped, and only then is it parsed as a record.
+            name="${line#"${line%%[![:space:]]*}"}"
+            name="${name%%[[:space:]]*}"
+            if [[ -n "${drop[$name]+x}" ]] && _arx_is_record "$line"; then
+                continue
             fi
+            printf '%s\n' "$line" >> "$tmpfile"
         done < "$archive"
     else
         printf '# git-arx archive – do not edit manually\n' >> "$tmpfile"
     fi
-    printf '%s\n' "${entries[@]}" >> "$tmpfile"
+    if [[ ${#entries[@]} -gt 0 ]]; then
+        printf '%s\n' "${entries[@]}" >> "$tmpfile"
+    fi
 
     # MINGW64-safe atomic replace
     [[ -f "$archive" ]] && rm -f "$archive"
     mv "$tmpfile" "$archive"
 }
 
-_arx_file_delete() {
-    local branch="$1"
-    local archive="$ARX_FILE" tmpfile
-    [[ -f "$archive" ]] || return 0
-    tmpfile="${archive}.tmp.$$"
-    # Create up front: if every line is filtered out below, mv would otherwise
-    # fail on a missing tmpfile after the archive was already removed.
-    : > "$tmpfile"
+_arx_file_write() {   # branch sha date
+    _arx_file_apply <<< "$1 $2 $3"
+}
 
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        [[ -n "$line" && "$line" != \#* && "${line%% *}" == "$branch" ]] && continue
-        printf '%s\n' "$line" >> "$tmpfile"
-    done < "$archive"
+_arx_file_write_bulk() {
+    # Read "branch sha date" records from stdin and write them all in one
+    # rewrite instead of one per entry.
+    _arx_file_apply
+}
 
-    rm -f "$archive"
-    mv "$tmpfile" "$archive"
+_arx_file_delete() {   # branch
+    _arx_file_apply <<< "$1"
 }
 
 # --- BACKEND: REFS -----------------------------------------------------------
 
 _arx_refs_read() {
+    # "<name> <sha> <date> <epoch>": the fourth field, the date as seconds
+    # since the epoch, comes free with the same for-each-ref and saves
+    # --sort=date computing it per entry. Readers that want three fields
+    # absorb it into their last variable.
     local refsprefix="$ARX_REFSPREFIX"
     git for-each-ref \
-        --format='%(refname) %(objectname) %(authordate:iso-strict)' \
+        --format='%(refname) %(objectname) %(authordate:iso-strict) %(authordate:unix)' \
         "$refsprefix" \
-    | while IFS=' ' read -r refname sha date rest; do
+    | while IFS=' ' read -r refname sha date epoch; do
         local branch="${refname#$refsprefix}"
-        printf '%s %s %s\n' "$branch" "$sha" "$date"
+        printf '%s %s %s %s\n' "$branch" "$sha" "$date" "$epoch"
     done
 }
 
@@ -345,7 +352,7 @@ _arx_read_all() {
         declare -A seen
         while IFS=' ' read -r branch sha date rest; do
             seen["$branch"]=1
-            printf '%s %s %s\n' "$branch" "$sha" "$date"
+            printf '%s %s %s %s\n' "$branch" "$sha" "$date" "$rest"
         done < <(_arx_refs_read)
         while IFS=' ' read -r branch sha date rest; do
             if [[ -z "${seen[$branch]+x}" ]]; then
@@ -423,6 +430,18 @@ _arx_sha_exists() {
     git cat-file -e "$sha" 2>/dev/null
 }
 
+_arx_require_valid_name() {   # name
+    # A name chosen by the user – add's archive-name, rename's new name –
+    # becomes a ref under the prefix, a branch on checkout, and a
+    # whitespace-delimited field in the archive file. So it must be a valid
+    # branch name: git's ref-name rules (no spaces, no "..", ...) plus no
+    # leading "-". Checked before any backend is written.
+    if [[ "$1" == -* ]] || ! git check-ref-format "refs/heads/$1"; then
+        printf 'git-arx: "%s" is not a valid archive name (it must be a valid branch name)\n' "$1" >&2
+        exit 1
+    fi
+}
+
 _arx_authors_by_sha() {
     # Print "<sha> <author>" for each SHA argument that still exists.
     # --ignore-missing drops garbage-collected objects from the batch; without
@@ -446,21 +465,56 @@ _arx_prune_deletable() {   # sha existing_sha existing_as live remote_gone
     [[ -n "$3" && $4 -eq 0 ]] && [[ -n "$2" || $5 -eq 1 ]]
 }
 
-_arx_sort_keys() {
+_arx_epoch() {   # iso-8601-date
+    # Seconds since the epoch for an ISO-8601 timestamp with a UTC offset
+    # (git's iso-strict), in REPLY; 0 if it doesn't parse. The --sort=date
+    # key for archive file records: stored dates keep the author's own
+    # offset, so compared as text 10:00+09:00 sorts after 02:00+00:00
+    # although it happened an hour earlier. The format is fixed-width, so
+    # after a glob check the fields are sliced out by position, and the date
+    # becomes days-from-civil in one arithmetic expression – no date(1)
+    # process, and no regex, per entry.
+    local t="$1" o=0
+    if [[ "$t" != [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]* ]]; then
+        REPLY=0
+        return 0
+    fi
+    case "${t:19}" in
+        ""|Z) ;;
+        [+-][0-9][0-9]:[0-9][0-9]) o=$(( 10#${t:20:2} * 3600 + 10#${t:23:2} * 60 )) ;;
+        [+-][0-9][0-9][0-9][0-9])  o=$(( 10#${t:20:2} * 3600 + 10#${t:22:2} * 60 )) ;;
+        *) REPLY=0; return 0 ;;
+    esac
+    [[ "${t:19:1}" == "-" ]] && o=$(( -o )) || true
+    # Years counted from March, so a leap day falls at the end of its year.
+    local m=$(( 10#${t:5:2} ))
+    local y=$(( 10#${t:0:4} - (m <= 2) ))
+    if (( y < 0 )); then
+        REPLY=0
+        return 0
+    fi
+    local era=$(( y / 400 )) yoe=$(( y % 400 ))   # 400-year eras, year of era
+    REPLY=$(( ( era * 146097 + yoe * 365 + yoe / 4 - yoe / 100
+               + (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + 10#${t:8:2} - 1 - 719468 ) * 86400
+             + 10#${t:11:2} * 3600 + 10#${t:14:2} * 60 + 10#${t:17:2} - o ))
+}
+
+_arx_sort_keys() {   # sort_by order epoch_field
     # Build sort(1) key options for <sort_by: name|date> <order: asc|desc>
-    # over rows whose field 1 is the branch name and field 3 the ISO-8601
-    # date. Reverse only the primary key (per-key 'r' modifier); the -k1,1
-    # name tiebreak stays ascending so same-date entries always list A->Z. A
-    # global -r would reverse the tiebreak too. Keys must be bounded (-kN,N):
-    # an open -kN spans to end of line and would tiebreak on trailing fields
-    # instead of the branch name.
-    local sort_by="$1" order="$2" field r=""
-    [[ "$sort_by" == "name" ]] && field=1 || field=3
+    # over rows whose field 1 is the branch name and field <epoch_field> the
+    # date as seconds since the epoch (_arx_epoch) – a number, so dates with
+    # different UTC offsets order by when they happened. Reverse only the
+    # primary key (per-key 'r' modifier); the -k1,1 name tiebreak stays
+    # ascending so same-date entries always list A->Z. A global -r would
+    # reverse the tiebreak too. Keys must be bounded (-kN,N): an open -kN
+    # spans to end of line and would tiebreak on trailing fields instead of
+    # the branch name.
+    local sort_by="$1" order="$2" field="$3" r=""
     [[ "$order" == "desc" ]] && r="r"
     if [[ "$sort_by" == "date" ]]; then
-        printf '%s' "-k${field},${field}${r} -k1,1"
+        printf '%s' "-k${field},${field}n${r} -k1,1"
     else
-        printf '%s' "-k${field},${field}${r}"
+        printf '%s' "-k1,1${r}"
     fi
 }
 
@@ -495,6 +549,9 @@ cmd_add() {
     done
 
     [[ -z "$branch" ]] && { printf 'Usage: git arx add <branch> [archive-name] [--force]\n' >&2; exit 1; }
+    if [[ -n "$archive_name" ]]; then
+        _arx_require_valid_name "$archive_name"
+    fi
 
     if ! git rev-parse --verify "refs/heads/${branch}" > /dev/null 2>&1; then
         printf 'git-arx: branch "%s" not found in local branches\n' "$branch" >&2
@@ -569,6 +626,7 @@ cmd_rename() {
     if [[ "$old_name" == "$new_name" ]]; then
         printf 'git-arx: old and new names are identical\n' >&2; exit 1
     fi
+    _arx_require_valid_name "$new_name"
 
     local entry
     entry=$(_arx_lookup_branch "$old_name")
@@ -724,12 +782,13 @@ cmd_status() {
 
     declare -A local_branches=()
     local -a rows=()
+    local row
     # Single for-each-ref call fetches SHA, date, author, and upstream for
     # all branches at once – replaces per-branch git rev-parse + git log calls.
     # NOTE: %(upstream) must be LAST. Tab is IFS whitespace, so consecutive
     # tabs collapse – a mid-format empty %(upstream) would shift all following
     # fields left. Placing it last lets bash strip the trailing tab cleanly.
-    while IFS=$'\t' read -r branch sha date author upstream_ref; do
+    while IFS=$'\t' read -r branch sha date epoch author upstream_ref; do
         branch="${branch#refs/heads/}"
         local_branches["$branch"]=1
         # Skip if upstream ref exists locally (live remote tracking branch)
@@ -769,12 +828,14 @@ cmd_status() {
         fi
 
         # DATE column: "YYYY-MM-DD HH:MM:SS" – slice the offset off the
-        # iso-strict timestamp and swap the ISO "T" for a space. The space is
-        # safe in a tab-delimited row, and sorting is unaffected: the separator
-        # sits at a fixed position, so field 3 still orders chronologically.
-        rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$branch" "${sha:0:8}" "${date:0:10} ${date:11:8}" "$author" "$status")")
+        # iso-strict timestamp and swap the ISO "T" for a space (safe in a
+        # tab-delimited row). Sorting uses field 6, the epoch, instead: the
+        # displayed time is the author's local one. printf -v, not $(printf):
+        # no subshell per branch.
+        printf -v row '%s\t%s\t%s\t%s\t%s\t%s' "$branch" "${sha:0:8}" "${date:0:10} ${date:11:8}" "$author" "$status" "$epoch"
+        rows+=("$row")
     done < <(git for-each-ref \
-        --format='%(refname)%09%(objectname)%09%(authordate:iso-strict)%09%(authorname)%09%(upstream)' \
+        --format='%(refname)%09%(objectname)%09%(authordate:iso-strict)%09%(authordate:unix)%09%(authorname)%09%(upstream)' \
         refs/heads/)
 
     # --all: also include archived branches with no local counterpart.
@@ -797,7 +858,9 @@ cmd_status() {
                 arc_full_date="${arc_date_by_name[$arc_branch]}"
                 arc_date="${arc_full_date:0:10} ${arc_full_date:11:8}"
                 arc_author="${author_by_sha[$arc_sha]:-"(gc)"}"
-                rows+=("$(printf '%s\t%s\t%s\t%s\t%s' "$arc_branch" "${arc_sha:0:8}" "$arc_date" "$arc_author" "Archived")")
+                _arx_epoch "$arc_full_date"
+                printf -v row '%s\t%s\t%s\t%s\t%s\t%s' "$arc_branch" "${arc_sha:0:8}" "$arc_date" "$arc_author" "Archived" "$REPLY"
+                rows+=("$row")
             done
         fi
     fi
@@ -812,7 +875,7 @@ cmd_status() {
     fi
 
     local sort_keys
-    sort_keys=$(_arx_sort_keys "$sort_by" "$order")
+    sort_keys=$(_arx_sort_keys "$sort_by" "$order" 6)
 
     local C_RED='' C_GREEN='' C_CYAN='' C_YELLOW='' C_DIM='' C_RESET=''
     if [[ -t 1 ]]; then
@@ -842,7 +905,7 @@ cmd_status() {
     fi
     local b s d a st aw saved_lc ac bc colored_st remote_st sw sc scb
     # shellcheck disable=SC2086
-    while IFS=$'\t' read -r b s d a st; do
+    while IFS=$'\t' read -r b s d a st _; do
         # %-20s pads by bytes; correct for multibyte chars in author names.
         ac=${#a}; saved_lc="${LC_ALL:-}"; LC_ALL=C; bc=${#a}; LC_ALL="$saved_lc"
         aw=$(( 20 + bc - ac ))
@@ -918,7 +981,23 @@ cmd_list() {
     fi
 
     local sort_keys
-    sort_keys=$(_arx_sort_keys "$sort_by" "$order")
+    sort_keys=$(_arx_sort_keys "$sort_by" "$order" 4)
+
+    # Sorting by date compares field 4, the date as seconds since the epoch:
+    # refs entries already carry it, file records get it from _arx_epoch –
+    # so the pass is needed only when the file contributes entries. The
+    # print loop below reads the field into "rest" and ignores it.
+    if [[ "$sort_by" == "date" && "$ARX_STOREFILE" == "true" && "$list_storage" != "refs" ]]; then
+        local keyed="" b s d e
+        while IFS=' ' read -r b s d e _; do
+            if [[ -z "$e" ]]; then
+                _arx_epoch "$d"
+                e="$REPLY"
+            fi
+            keyed+="$b $s $d $e"$'\n'
+        done <<< "$entries"
+        entries="${keyed%$'\n'}"
+    fi
 
     # shellcheck disable=SC2086
     local sorted
@@ -1072,18 +1151,19 @@ cmd_merge() {
     [[ -f "$file1" ]] || { printf 'git-arx: file not found: %s\n' "$file1" >&2; exit 1; }
     [[ -f "$file2" ]] || { printf 'git-arx: file not found: %s\n' "$file2" >&2; exit 1; }
 
+    # Read both through _arx_file_read, as the archive itself is read: the
+    # same validation and comment rules, and a last line without a trailing
+    # newline is still a record.
     declare -A map1 map2
-    local line branch sha date
+    local branch sha date
 
-    while IFS=' ' read -r branch sha date rest; do
-        [[ -z "$branch" || "$branch" == \#* ]] && continue
+    while IFS=' ' read -r branch sha date; do
         map1["$branch"]="$sha $date"
-    done < "$file1"
+    done < <(_arx_file_read "$file1")
 
-    while IFS=' ' read -r branch sha date rest; do
-        [[ -z "$branch" || "$branch" == \#* ]] && continue
+    while IFS=' ' read -r branch sha date; do
         map2["$branch"]="$sha $date"
-    done < "$file2"
+    done < <(_arx_file_read "$file2")
 
     local merged=0 conflicts=0
     local tmpfile="${output}.tmp.$$"
@@ -1117,8 +1197,11 @@ cmd_merge() {
     [[ -f "$output" ]] && rm -f "$output"
     mv "$tmpfile" "$output"
     printf 'Merged %d entries to %s' "$merged" "$output"
-    [[ $conflicts -gt 0 ]] && printf ' (%d conflict(s) skipped)' "$conflicts"
+    [[ $conflicts -gt 0 ]] && printf ' (%d conflict(s) skipped)' "$conflicts" || true
     printf '\n'
+    # Skipped entries are missing from the output – exit non-zero, as update,
+    # prune and sync do for conflicts.
+    [[ $conflicts -gt 0 ]] && exit 1 || true
 }
 
 cmd_sync() {
@@ -1134,7 +1217,7 @@ cmd_sync() {
         esac
     done
 
-    declare -A refs_map file_map
+    declare -A refs_map=() file_map=()
     local branch sha date
 
     while IFS=' ' read -r branch sha date rest; do
@@ -1148,7 +1231,24 @@ cmd_sync() {
     declare -A all_branches
     for b in "${!refs_map[@]}" "${!file_map[@]}"; do all_branches["$b"]=1; done
 
+    # A ref can only point at an object the repository has, and the file may
+    # name commits this clone never fetched (it travels with the repo). Check
+    # every file SHA in one cat-file call up front, so such an entry is
+    # skipped and reported instead of aborting the sync halfway through.
+    declare -A have_object=()
+    if [[ ${#file_map[@]} -gt 0 ]]; then
+        local type
+        while IFS=' ' read -r sha type; do
+            [[ "$type" != "missing" ]] && have_object["$sha"]=1 || true
+        done < <(for b in "${!file_map[@]}"; do printf '%s\n' "${file_map[$b]%% *}"; done \
+            | git cat-file --batch-check='%(objectname) %(objecttype)')
+    fi
+
+    # Decide every entry first, collecting the writes into one update-ref
+    # transaction and one file rewrite – applied refs first, as _arx_write
+    # does – instead of a subprocess or a full file rewrite per entry.
     local had_conflict=0
+    local -a ref_ops=() file_ops=()
 
     for b in "${!all_branches[@]}"; do
         local rv="${refs_map[$b]+${refs_map[$b]}}"
@@ -1161,13 +1261,16 @@ cmd_sync() {
             else
                 if [[ -n "$force" ]]; then
                     if [[ "$force" == "file" ]]; then
-                        local fsha="${fv%% *}" fdate="${fv#* }"
-                        [[ $dry_run -eq 0 ]] && _arx_refs_write "$b" "$fsha"
-                        printf 'Resolved (force-file): %s -> refs=%s\n' "$b" "${fsha:0:8}"
+                        if [[ -z "${have_object[$fs]:-}" ]]; then
+                            printf 'Skipped: %s – commit %s is not in this repository\n' "$b" "${fs:0:8}" >&2
+                            had_conflict=1
+                            continue
+                        fi
+                        ref_ops+=("update ${ARX_REFSPREFIX}${b} ${fs}")
+                        printf 'Resolved (force-file): %s -> refs=%s\n' "$b" "${fs:0:8}"
                     else
-                        local rsha="${rv%% *}" rdate="${rv#* }"
-                        [[ $dry_run -eq 0 ]] && _arx_file_write "$b" "$rsha" "$rdate"
-                        printf 'Resolved (force-refs): %s -> file=%s\n' "$b" "${rsha:0:8}"
+                        file_ops+=("$b $rv")
+                        printf 'Resolved (force-refs): %s -> file=%s\n' "$b" "${rs:0:8}"
                     fi
                 else
                     printf 'CONFLICT: %s – refs=%s file=%s. Use --force-refs or --force-file.\n' \
@@ -1176,27 +1279,41 @@ cmd_sync() {
                 fi
             fi
         elif [[ -n "$rv" ]]; then
-            local rsha="${rv%% *}" rdate="${rv#* }"
             if [[ "$force" == "file" ]]; then
                 # File is authoritative – entry absent from file means remove it from refs
-                [[ $dry_run -eq 0 ]] && _arx_refs_delete "$b"
+                ref_ops+=("delete ${ARX_REFSPREFIX}${b}")
                 printf 'Removed from refs (force-file): %s\n' "$b"
             else
-                [[ $dry_run -eq 0 ]] && _arx_file_write "$b" "$rsha" "$rdate"
+                file_ops+=("$b $rv")
                 printf 'Synced to file: %s\n' "$b"
             fi
         else
-            local fsha="${fv%% *}" fdate="${fv#* }"
+            local fsha="${fv%% *}"
             if [[ "$force" == "refs" ]]; then
                 # Refs is authoritative – entry absent from refs means remove it from file
-                [[ $dry_run -eq 0 ]] && _arx_file_delete "$b"
+                file_ops+=("$b")
                 printf 'Removed from file (force-refs): %s\n' "$b"
+            elif [[ -z "${have_object[$fsha]:-}" ]]; then
+                printf 'Skipped: %s – commit %s is not in this repository\n' "$b" "${fsha:0:8}" >&2
+                had_conflict=1
             else
-                [[ $dry_run -eq 0 ]] && _arx_refs_write "$b" "$fsha"
+                ref_ops+=("update ${ARX_REFSPREFIX}${b} ${fsha}")
                 printf 'Synced to refs: %s\n' "$b"
             fi
         fi
     done
+
+    if [[ $dry_run -eq 0 ]]; then
+        if [[ ${#ref_ops[@]} -gt 0 ]]; then
+            if ! printf '%s\n' "${ref_ops[@]}" | git update-ref --stdin; then
+                printf 'git-arx: the refs update failed, so nothing was synced (see the error above)\n' >&2
+                exit 1
+            fi
+        fi
+        if [[ ${#file_ops[@]} -gt 0 ]]; then
+            printf '%s\n' "${file_ops[@]}" | _arx_file_apply
+        fi
+    fi
 
     [[ $had_conflict -eq 1 ]] && exit 1
     printf 'Sync complete.\n'
@@ -1212,12 +1329,6 @@ cmd_prune() {
             *) printf 'git-arx: unknown option "%s"\n' "$arg" >&2; exit 1 ;;
         esac
     done
-
-    # Determine current branch so we can skip it. Full refname – see INTERNALS
-    # for why the shortened forms are unsafe.
-    local current_branch
-    current_branch=$(git symbolic-ref --quiet HEAD 2>/dev/null || true)
-    current_branch="${current_branch#refs/heads/}"
 
     # Load archive once into associative arrays for O(1) lookup.
     declare -A arc_by_name arc_by_sha
@@ -1251,10 +1362,12 @@ cmd_prune() {
     done < <(git for-each-ref --format='%(refname)' refs/heads/ refs/remotes/)
 
     # Walk local branches, classifying each by the SHA it points at now.
-    # %(upstream) last – see INTERNALS for the IFS tab-collapsing explanation.
+    # Fields are separated by \x1f, not tab: %(upstream) and %(worktreepath)
+    # can both be empty, and a run of IFS-whitespace tabs would collapse into
+    # one separator and shift the fields (see INTERNALS).
     local -a branches=() labels=() skipped=() conflicts=() unprotected=()
-    local branch sha upstream_ref existing_sha existing_as label kind remote_gone live
-    while IFS=$'\t' read -r branch sha upstream_ref; do
+    local branch sha upstream_ref worktree existing_sha existing_as label kind remote_gone live
+    while IFS=$'\x1f' read -r branch sha upstream_ref worktree; do
         branch="${branch#refs/heads/}"
         existing_sha="${arc_by_name[$branch]:-}"   # this name, at any SHA
         existing_as="${arc_by_sha[$sha]:-}"        # this commit, under any name
@@ -1282,9 +1395,11 @@ cmd_prune() {
         if [[ -z "$kind" ]]; then
             continue  # not archived – leave it alone
         fi
-        # git refuses to delete the checked-out branch, so it is reported as
-        # skipped rather than queued for deletion or flagged as a conflict.
-        if [[ "$branch" == "$current_branch" ]]; then
+        # git refuses to delete a branch checked out in any worktree – this
+        # one or another – so it is reported as skipped rather than queued for
+        # deletion or flagged as a conflict.
+        if [[ -n "$worktree" ]]; then
+            [[ "$worktree" != "$ARX_GIT_ROOT" ]] && label="$label (in $worktree)" || true
             skipped+=("$label")
             continue
         fi
@@ -1299,7 +1414,7 @@ cmd_prune() {
         branches+=("$branch")
         labels+=("$label")
     done < <(git for-each-ref \
-        --format='%(refname)%09%(objectname)%09%(upstream)' refs/heads/)
+        --format='%(refname)%1f%(objectname)%1f%(upstream)%1f%(worktreepath)' refs/heads/)
 
     # Conflicts and file-only entries both need the user's attention before
     # they can be pruned, so either makes the run exit non-zero.
@@ -1394,31 +1509,104 @@ cmd_push() {
         return
     fi
 
-    if [[ $prune -eq 1 ]]; then
-        git push $dry_run $force --prune origin "${refsprefix}*:${refsprefix}*"
-        if [[ -z "$dry_run" ]]; then
-            # Rebuild remote tracking refs to match what's now on remote (= local after prune)
-            while IFS=' ' read -r refname _rest; do
-                git update-ref -d "$refname"
-            done < <(git for-each-ref --format='%(refname)' "$remote_prefix" 2>/dev/null || true)
-            while IFS=' ' read -r refname sha _rest; do
-                git update-ref "${remote_prefix}${refname#"$refsprefix"}" "$sha"
-            done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix")
+    # Local archive refs (what gets pushed) and tracking refs (what the
+    # remote held at the last push or pull), from one for-each-ref.
+    declare -A local_sha=() tracked=()
+    local refname sha
+    while IFS=' ' read -r refname sha; do
+        if [[ "$refname" == "$remote_prefix"* ]]; then
+            tracked["${refname#"$remote_prefix"}"]=1
         else
-            printf '(dry run – no changes written)\n'
+            local_sha["${refname#"$refsprefix"}"]="$sha"
         fi
-        return
+    done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix" "$remote_prefix")
+
+    # --porcelain reports every ref's outcome, so the tracking refs follow
+    # what the remote actually accepted. A push can succeed for some refs and
+    # be rejected for others (a ref re-archived at a commit that doesn't
+    # descend from the remote's); updating tracking only after a fully
+    # successful push left the accepted ones showing as "local". git's own
+    # hints about rejected refs suggest `git pull`, which is wrong here, so
+    # they are turned off and replaced by ours.
+    local -a args=(--porcelain)
+    [[ -n "$dry_run" ]] && args+=(--dry-run) || true
+    [[ -n "$force" ]] && args+=(--force) || true
+    [[ $prune -eq 1 ]] && args+=(--prune) || true
+    local out rc=0
+    out=$(git -c advice.pushUpdateRejected=false push "${args[@]}" origin "${refsprefix}*:${refsprefix}*") || rc=$?
+
+    # Porcelain lines are "<flag>\t<from>:<to>\t<summary>": " " fast-forward,
+    # "+" forced, "*" new, "=" up to date, "-" deleted, "!" rejected.
+    declare -A track_op=()
+    local flag spec summary name reason pushed=0 deleted=0 rejected=0 diverged=0
+    while IFS=$'\t' read -r flag spec summary; do
+        [[ -z "$spec" ]] && continue   # the "To <url>" and "Done" lines
+        name="${spec##*:}"
+        name="${name#"$refsprefix"}"
+        case "$flag" in
+            '*'|' '|'+'|'=')
+                case "$flag" in
+                    '*') printf 'Pushed: %s (new)\n' "$name" ;;
+                    ' ') printf 'Pushed: %s\n' "$name" ;;
+                    '+') printf 'Pushed: %s (forced)\n' "$name" ;;
+                esac
+                [[ "$flag" != "=" ]] && pushed=$(( pushed + 1 )) || true
+                if [[ -n "${local_sha[$name]:-}" ]]; then
+                    track_op["$name"]="update ${remote_prefix}${name} ${local_sha[$name]}"
+                fi
+                ;;
+            '-')
+                printf 'Deleted from remote: %s\n' "$name"
+                deleted=$(( deleted + 1 ))
+                if [[ -n "${tracked[$name]:-}" ]]; then
+                    track_op["$name"]="delete ${remote_prefix}${name}"
+                fi
+                ;;
+            '!')
+                # "[rejected] (non-fast-forward)" -> "non-fast-forward"
+                reason="$summary"
+                if [[ "$summary" == *"("*")"* ]]; then
+                    reason="${summary#*"("}"
+                    reason="${reason%")"*}"
+                fi
+                printf 'Rejected: %s (%s)\n' "$name" "$reason"
+                rejected=$(( rejected + 1 ))
+                case "$reason" in
+                    *non-fast-forward*|*"fetch first"*) diverged=$(( diverged + 1 )) ;;
+                esac
+                ;;
+        esac
+    done <<< "$out"
+
+    # After a complete --prune push the remote holds exactly the local
+    # archive, so tracking refs for anything else are stale too.
+    if [[ $prune -eq 1 && $rc -eq 0 ]]; then
+        for name in "${!tracked[@]}"; do
+            if [[ -z "${local_sha[$name]:-}" ]]; then
+                track_op["$name"]="delete ${remote_prefix}${name}"
+            fi
+        done
     fi
 
-    git push $dry_run $force origin "${refsprefix}*:${refsprefix}*"
-    if [[ -z "$dry_run" ]]; then
-        # Update remote tracking refs to reflect what was just pushed
-        while IFS=' ' read -r refname sha _rest; do
-            git update-ref "${remote_prefix}${refname#"$refsprefix"}" "$sha"
-        done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix")
-    else
-        printf '(dry run – no changes written)\n'
+    if [[ -z "$dry_run" && ${#track_op[@]} -gt 0 ]]; then
+        printf '%s\n' "${track_op[@]}" | git update-ref --stdin
     fi
+
+    if [[ $(( pushed + deleted + rejected )) -eq 0 ]]; then
+        [[ $rc -eq 0 ]] && printf 'Everything up to date.\n' || true
+    else
+        printf 'Done. Pushed %d ref(s)' "$pushed"
+        [[ $deleted -gt 0 ]] && printf ', deleted %d' "$deleted" || true
+        [[ $rejected -gt 0 ]] && printf ', %d rejected' "$rejected" || true
+        printf '.\n'
+    fi
+    if [[ $diverged -gt 0 ]]; then
+        # The remote copy is not an ancestor of the local one: re-archived
+        # here at another commit, or changed on the remote since.
+        printf 'Run "git arx fetch" to see which side changed; "git arx push --force" replaces the remote copies.\n'
+    fi
+    [[ -n "$dry_run" ]] && printf '(dry run – no changes written)\n' || true
+    return "$rc"
 }
 
 cmd_fetch() {
@@ -1637,10 +1825,9 @@ cmd_purge() {
     # One push deletes every remote arx ref in a single round-trip.
     git push origin --delete "${remote_refs[@]}"
 
-    # The remote now has no arx refs, so drop all local tracking refs to match.
-    while IFS=' ' read -r refname _rest; do
-        git update-ref -d "$refname" 2>/dev/null || true
-    done < <(git for-each-ref --format='%(refname)' "$remote_prefix" 2>/dev/null || true)
+    # The remote now has no arx refs, so drop all local tracking refs to match
+    # – in one update-ref transaction rather than a process per ref.
+    git for-each-ref --format='delete %(refname)' "$remote_prefix" | git update-ref --stdin
 
     printf 'Done. Deleted %d remote ref(s).\n' "${#remote_refs[@]}"
 }

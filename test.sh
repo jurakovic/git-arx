@@ -32,7 +32,7 @@ FAIL_TAG=$'  \033[31mFAIL\033[0m  '
 export GIT_CONFIG_GLOBAL=/dev/null
 
 SECTIONS=(
-    help add remove rename list update sort_tiebreak log checkout prune merge
+    help add remove rename list update sort_tiebreak sort_time log checkout prune merge
     refs_backend both_backend push_pull purge sync file_records slashed_branches
     double_add config_bool error_cases overwrite_guard
 )
@@ -253,6 +253,18 @@ test_add() {
     has "add: archive name conflict: error" "conflict"
     nok "add: archive name conflict: nonzero"
 
+    # archive names must be valid branch names – a space would split the
+    # file record, and the name becomes a ref and a branch on checkout
+    run arx add feature/beta 'my old beta'
+    has   "add: invalid archive name: error" "not a valid archive name"
+    nok   "add: invalid archive name: nonzero"
+    check "add: invalid archive name: nothing written" ! file_has .gitarchive "my old beta"
+    assert_fails "add: archive name with leading dash: nonzero" arx add feature/beta -beta
+    set_storage both
+    assert_fails "add (both): invalid archive name: nonzero" arx add feature/beta 'bad name2'
+    check "add (both): invalid archive name: file untouched" ! file_has .gitarchive "bad"
+    set_storage file
+
     # SHA already archived under a different name: note shown, still archives
     reset_archive
     arx add feature/alpha alpha-saved > /dev/null
@@ -342,6 +354,11 @@ test_rename() {
     run arx rename feature/beta alpha-old
     has "rename: target exists: error" "already exists"
     nok "rename: target exists: nonzero"
+
+    run arx rename feature/beta 'beta two'
+    has   "rename: invalid new name: error" "not a valid archive name"
+    nok   "rename: invalid new name: nonzero"
+    check "rename: invalid new name: entry unchanged" file_has .gitarchive "feature/beta "
 
     run arx list
     has   "rename: new name appears in list" "alpha-old"
@@ -499,6 +516,36 @@ test_sort_tiebreak() {
         pass "status --sort=date: equal dates tiebreak by branch name"
     else
         fail "status --sort=date: equal dates tiebreak by branch name"
+        got
+    fi
+}
+
+test_sort_time() {
+    section "date sorting across UTC offsets"
+
+    # tokyo happened at 01:00 UTC, london at 02:00 UTC – but as text,
+    # tokyo's local 10:00 sorts after london's 02:00. --sort=date must order
+    # by when they happened.
+    printf '# git-arx archive\nlondon %s 2025-06-01T02:00:00+00:00\ntokyo %s 2025-06-01T10:00:00+09:00\n' \
+        "$SHA_ALPHA" "$SHA_BETA" > .gitarchive
+    run arx list --sort=date --order=asc
+    if [[ $OUT == *tokyo*london* ]]; then
+        pass "list --sort=date: orders by actual time across offsets"
+    else
+        fail "list --sort=date: orders by actual time across offsets"
+        got
+    fi
+
+    local sha_t sha_l
+    sha_t=$(GIT_AUTHOR_DATE="2025-06-01T10:00:00+09:00" git commit-tree -m "tokyo" "HEAD^{tree}")
+    sha_l=$(GIT_AUTHOR_DATE="2025-06-01T02:00:00+00:00" git commit-tree -m "london" "HEAD^{tree}")
+    git branch tz-tokyo "$sha_t"
+    git branch tz-london "$sha_l"
+    run arx status --all --sort=date --order=asc
+    if [[ $OUT == *tz-tokyo*tz-london* ]]; then
+        pass "status --sort=date: orders by actual time across offsets"
+    else
+        fail "status --sort=date: orders by actual time across offsets"
         got
     fi
 }
@@ -674,6 +721,19 @@ test_prune() {
     run arx prune --force
     check "prune: deletes branch whose name is also a tag" ! ref_exists refs/heads/ambiguous
 
+    # A branch checked out in another worktree can't be deleted either – it
+    # must be skipped like the current branch, not break the batch delete
+    reset_archive
+    reset_branches
+    arx add feature/alpha > /dev/null
+    arx add feature/beta  > /dev/null
+    git worktree add -q "$SANDBOX/wt" feature/beta
+    run arx prune --force
+    ok    "prune: branch in another worktree: exits 0"
+    has   "prune: branch in another worktree: skipped and located" "Skipped (currently checked out)" "feature/beta (in "
+    check "prune: branch in another worktree: kept" ref_exists refs/heads/feature/beta
+    check "prune: rest of the batch still deleted" ! ref_exists refs/heads/feature/alpha
+
     assert_fails "prune: unknown option: nonzero" arx prune --bogus
 }
 
@@ -694,10 +754,16 @@ test_merge() {
     has   "merge: reports count" "Merged"
     check "merge: deduplicates identical entries" [ "$(grep -c '^feature/beta ' "$fo" 2> /dev/null)" = 1 ]
 
+    # A last line without a trailing newline is still an entry
+    printf '# archive\nfix/gamma %s 2025-01-03T00:00:00+00:00' "$SHA_GAMMA" > "$f2"
+    run arx merge "$f1" "$f2" -o "$fo"
+    check "merge: keeps a last line without trailing newline" file_has "$fo" "fix/gamma"
+
     # SHA conflict: f2 has feature/alpha with a different SHA
     printf '# archive\nfeature/alpha %s 2025-01-04T00:00:00+00:00\n' "$SHA_BETA" > "$f2"
     run arx merge "$f1" "$f2" -o "$fo"
     has   "merge: reports SHA conflict" "CONFLICT"
+    nok   "merge: conflict exits nonzero"
     check "merge: conflict entry excluded from output" ! file_has "$fo" "feature/alpha"
 
     # Wrong backend
@@ -872,6 +938,18 @@ test_push_pull() {
     # (feature/beta was removed from the remote by push --prune above,
     # but repo2 still has its tracking ref from the earlier pull)
     check "pull: prunes tracking ref for remotely deleted ref" ! ref_exists refs/arx-remote/origin/feature/beta
+
+    # A push that is partly rejected – feature/alpha moved back to an
+    # ancestor of the remote's copy, so not a fast-forward – must still
+    # record the refs the remote did accept
+    cd "$REPO"
+    git update-ref refs/arx/feature/alpha "$SHA_BETA"
+    git update-ref refs/arx/newone "$SHA_ALPHA"
+    run arx push
+    nok   "push: partial rejection exits nonzero"
+    has   "push: partial rejection reports both" "Rejected: feature/alpha" "Pushed: newone (new)"
+    check "push: accepted ref tracked despite a rejection" ref_is refs/arx-remote/origin/newone "$SHA_ALPHA"
+    check "push: rejected ref keeps its tracking value"    ref_is refs/arx-remote/origin/feature/alpha "$SHA_GAMMA"
 }
 
 test_purge() {
@@ -965,6 +1043,18 @@ test_sync() {
     # Verify no write happened: file should still have SHA_ALPHA
     check "sync --dry-run --force-refs: does not write" file_has .gitarchive "$SHA_ALPHA"
 
+    # A file entry whose commit isn't in this repository (a teammate's
+    # never-pushed branch, say) can't become a ref: it is skipped and
+    # reported, and the entries around it are still synced
+    reset_archive both
+    printf '# git-arx archive\naaa-first %s 2025-01-01T00:00:00+00:00\nmissing %s 2025-01-01T00:00:00+00:00\nzzz-last %s 2025-01-01T00:00:00+00:00\n' \
+        "$SHA_ALPHA" 1111111111111111111111111111111111111111 "$SHA_BETA" > .gitarchive
+    run arx sync
+    nok   "sync: missing object exits nonzero"
+    has   "sync: missing object is reported" "Skipped: missing"
+    check "sync: entries around a missing object still synced" ref_exists refs/arx/aaa-first refs/arx/zzz-last
+    check "sync: no ref for the missing object" ! ref_exists refs/arx/missing
+
     # sync requires both
     set_storage file
     run arx sync
@@ -992,6 +1082,25 @@ test_file_records() {
     check "records: list --author passes nothing to git as an option"   ! test -e "$SANDBOX/pwned"
     arx status --all > /dev/null 2>&1
     check "records: status --all passes nothing to git as an option"    ! test -e "$SANDBOX/pwned"
+
+    # git allows branch names starting with "#": such a record must read
+    # back as an entry, not be skipped as a comment
+    reset_archive
+    git branch '#hotfix' "$SHA_BETA"
+    arx add '#hotfix' > /dev/null
+    assert_out "records: #-named branch is listed" "#hotfix" arx list
+    assert_out "records: #-named branch re-add is idempotent" "Already archived" arx add '#hotfix'
+    check "records: #-named branch stored once" [ "$(grep -c '^#hotfix ' .gitarchive)" = 1 ]
+    assert_ok "records: #-named branch can be removed" arx remove '#hotfix'
+    check "records: header comment survives" file_has .gitarchive "# git-arx archive"
+
+    # A CRLF checkout (core.autocrlf on Windows) leaves \r on every line
+    reset_archive
+    printf '# git-arx archive\r\nfeature/alpha %s 2025-01-01T00:00:00+00:00\r\n' "$SHA_ALPHA" > .gitarchive
+    run arx list
+    has   "records: CRLF file is read" "feature/alpha"
+    lacks "records: CRLF leaves no carriage return" $'\r'
+    lacks "records: CRLF lines are not reported" "not an archive record"
 }
 
 test_slashed_branches() {
@@ -1061,6 +1170,13 @@ test_config_bool() {
         if ! verdict=$(git config -f "$probes" --type=bool --get "probe.p$i" 2>/dev/null); then
             verdict=""      # git rejects it; git-arx must use the key's default
         fi
+        # Before 2.50, git's range check was off by one for the most negative
+        # int (parse.c: -max / factor, now (-max - 1) / factor), so the
+        # oracle's answer for it depends on the installed version. git-arx
+        # follows the fixed parser.
+        if [[ "$value" == "-2147483648" ]]; then
+            verdict="true"
+        fi
         for default in true false; do
             REPLY=""
             _arx_bool "$value" false "$default"
@@ -1095,6 +1211,15 @@ test_error_cases() {
     set_storage refs
     assert_out "merge: requires file" "requires file storage" \
         arx merge /dev/null /dev/null -o /dev/null
+
+    # A refs prefix inside one of git's own namespaces would turn prune and
+    # purge into mass deletions of real branches
+    git config arx.refsprefix refs/heads
+    run arx prune --dry-run
+    nok "refsprefix inside refs/heads/: rejected"
+    has "refsprefix inside refs/heads/: explains why" "dedicated namespace"
+    lacks "refsprefix inside refs/heads/: lists nothing to delete" "permanently deleted"
+    git config --unset arx.refsprefix
 
     # Neither backend enabled: nothing can be stored, so commands must refuse
     # rather than report "Archived" having written nothing

@@ -172,7 +172,7 @@ Useful as a preview step before running `update`, especially in shared repositor
 | Option | Description |
 |---|---|
 | `--sort=name` | Sort alphabetically by branch name (default) |
-| `--sort=date` | Sort by commit date |
+| `--sort=date` | Sort by commit date – by when the commit was made, even across timezones; the DATE column shows each author's local time |
 | `--order=asc` | Ascending order |
 | `--order=desc` | Descending order |
 | `--all`, `-a` | Also show never-pushed branches and archived branches with no local counterpart |
@@ -278,7 +278,7 @@ With both backends enabled, only refs count when deciding what to delete – a r
 #   feature/from-teammate
 ```
 
-Branches that are not in the archive at all are left alone silently, as are branches whose remote branch still exists. If you are currently checked out on an archived branch, it is skipped with a notice – including when it has moved past its archived SHA.
+Branches that are not in the archive at all are left alone silently, as are branches whose remote branch still exists. A branch that is checked out – here or in another worktree (`git worktree`) – is skipped with a notice, including when it has moved past its archived SHA; branches checked out elsewhere are listed with their worktree's path.
 
 **Options:**
 
@@ -319,7 +319,7 @@ The **REMOTE** column is shown when the refs backend is active (the default). It
 | Option | Description |
 |---|---|
 | `--sort=name` | Sort alphabetically by branch name |
-| `--sort=date` | Sort by commit date (default) |
+| `--sort=date` | Sort by commit date (default) – by when the commit was made, even across timezones |
 | `--order=asc` | Ascending order |
 | `--order=desc` | Descending order |
 | `--storage=file\|refs` | Show only branches from the given backend (default: all configured backends). Hides the REMOTE column when `file` is specified. |
@@ -405,7 +405,7 @@ Archived: feature/my-feature at a1b2c3d4
 
 | Argument / Option | Description |
 |---|---|
-| `archive-name` | Archive under this name instead of the branch name. Useful when an existing archive entry would conflict. |
+| `archive-name` | Archive under this name instead of the branch name. Useful when an existing archive entry would conflict. Must be a valid branch name, since `checkout` restores it as one. |
 | `--force`, `-f` | Overwrite an existing archive entry, even if the SHA differs. |
 
 ```bash
@@ -444,7 +444,7 @@ git arx rename feature/my-feature feature/my-feature-v1
 # Renamed: feature/my-feature -> feature/my-feature-v1
 ```
 
-The command exits with an error if the old name is not in the archive, or if the new name already exists.
+The command exits with an error if the old name is not in the archive, if the new name already exists, or if the new name is not a valid branch name.
 
 **Why this is useful – git ref namespace collisions:**
 
@@ -470,7 +470,9 @@ git arx merge .gitarchive /backup/.gitarchive -o merged.gitarchive
 
 - Entries present in only one file are kept as-is.
 - Entries present in both files with the **same SHA** are deduplicated.
-- Entries present in both files with **different SHAs** are reported as conflicts and skipped – they will not appear in the output.
+- Entries present in both files with **different SHAs** are reported as conflicts and skipped – they will not appear in the output, and the command exits with a non-zero status.
+
+Both files are read exactly like the archive itself, so lines that aren't valid entries are reported and left out.
 
 Requires `arx.storefile` to be enabled.
 
@@ -478,12 +480,21 @@ Requires `arx.storefile` to be enabled.
 
 ### `git arx push`
 
-Push archived refs to the remote, making them available to other clones of the repository. After a successful push, local remote-tracking refs are updated so that `git arx list` and `git arx status --all` can report accurate `REMOTE` values without a network call.
+Push archived refs to the remote, making them available to other clones of the repository. The outcome is listed per ref, and local remote-tracking refs are updated for every ref the remote accepted, so that `git arx list` and `git arx status --all` can report accurate `REMOTE` values without a network call.
 
 ```bash
 git arx push
-# To origin
-#  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
+# Pushed: feature/my-feature (new)
+# Done. Pushed 1 ref(s).
+```
+
+A ref the remote refuses – re-archived here at a commit that does not descend from the remote copy, or changed on the remote since your last pull – is reported, the other refs are still pushed and tracked, and the command exits non-zero:
+
+```
+# Pushed: feature/new-one (new)
+# Rejected: feature/my-feature (non-fast-forward)
+# Done. Pushed 1 ref(s), 1 rejected.
+# Run "git arx fetch" to see which side changed; "git arx push --force" replaces the remote copies.
 ```
 
 Use `--force` (`-f`) to force-push refs whose SHA has changed (e.g. after re-archiving a branch at a different commit):
@@ -496,8 +507,8 @@ Use `--dry-run` (`-n`) to see what would be pushed without actually pushing:
 
 ```bash
 git arx push --dry-run
-# To origin
-#  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
+# Pushed: feature/my-feature (new)
+# Done. Pushed 1 ref(s).
 # (dry run – no changes written)
 ```
 
@@ -645,6 +656,8 @@ git arx sync --force-refs
 
 If `sync` encounters a SHA conflict and no `--force-*` flag is given, it reports the conflict and exits with a non-zero status. Entries without conflicts are still synced.
 
+A file entry whose commit is not in this repository – a teammate archived a branch you never fetched – cannot become a ref. `sync` skips it with a notice (`Skipped: <branch> – commit ... is not in this repository`), syncs everything else, and exits non-zero.
+
 Requires both `arx.storerefs` and `arx.storefile` to be enabled.
 
 ---
@@ -717,7 +730,7 @@ feature/my-feature a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 2025-11-15T10:30:00+
 fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 ```
 
-Since the file can be committed and shared, git-arx treats its contents as untrusted input. A line whose SHA is not a full hex object name is reported and ignored, so nothing from the file ever reaches git as a command-line option.
+Lines starting with `#` are comments – unless they have the shape of an entry, because git allows branch names that start with `#`. Since the file can be committed and shared, git-arx treats its contents as untrusted input: a line whose SHA is not a full hex object name is reported and ignored, so nothing from the file ever reaches git as a command-line option.
 
 **Strengths:**
 - Human-readable – inspect it with any text editor or `cat .gitarchive`
@@ -783,7 +796,7 @@ git config arx.filepath my-archive.txt
 
 ### `arx.refsprefix`
 
-Refs namespace prefix for the refs backend. Default: `refs/arx/`. Must be of the form `refs/<namespace>/`: a value that does not name a namespace under `refs/` (including a bare `refs/`) is rejected with an error, and a missing trailing `/` is appended automatically.
+Refs namespace prefix for the refs backend. Default: `refs/arx/`. Must be of the form `refs/<namespace>/`: a value that does not name a namespace under `refs/` (including a bare `refs/`) is rejected with an error, and a missing trailing `/` is appended automatically. It must also be a namespace of its own – a prefix inside one of git's (`refs/heads/`, `refs/tags/`, `refs/remotes/`, `refs/notes/`, ...) is rejected, since `prune` and `purge` would treat those refs as the archive and delete them.
 
 ```bash
 git config arx.refsprefix refs/arx/        # default
