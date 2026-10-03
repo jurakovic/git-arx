@@ -135,6 +135,15 @@ _arx_load_config() {
 
     ARX_STOREREFS="$storerefs"
     ARX_STOREFILE="$storefile"
+    # Every command after this point reads or writes the archive. Checking here
+    # is the only reliable place: _arx_read_all mostly runs in a process
+    # substitution, where an exit ends just that subshell and leaves the
+    # command to carry on – add and update would report "Archived" having
+    # stored nothing.
+    if [[ "$ARX_STOREREFS" != "true" && "$ARX_STOREFILE" != "true" ]]; then
+        printf 'git-arx: no storage backend enabled (set arx.storerefs=true or arx.storefile=true)\n' >&2
+        exit 1
+    fi
     # Resolve relative to repo root, not $PWD
     ARX_FILE="${ARX_GIT_ROOT}/${filename}"
     ARX_REFSPREFIX="$refsprefix"
@@ -175,13 +184,40 @@ _arx_require_storage() {
 
 # --- BACKEND: FILE -----------------------------------------------------------
 
+# "<name> <sha> [<date>]": the SHA must be a full 40- or 64-digit hex object
+# name, followed by whitespace or the end of the line.
+ARX_RECORD_RE='^[[:space:]]*([^[:space:]]+)[[:space:]]+([[:xdigit:]]{40}|[[:xdigit:]]{64})([[:space:]]|$)'
+
+_arx_parse_record() {
+    # Split one archive file line into ARX_NAME, ARX_SHA and ARX_DATE, or
+    # return 1 if it is not a record. Globals rather than output: this runs
+    # once per line, and capturing output would cost a subshell each time.
+    [[ "$1" =~ $ARX_RECORD_RE ]] || return 1
+    local rest="${1:${#BASH_REMATCH[0]}}"
+    rest="${rest#"${rest%%[![:space:]]*}"}"   # trim leading whitespace
+    ARX_NAME="${BASH_REMATCH[1]}"
+    ARX_SHA="${BASH_REMATCH[2],,}"
+    ARX_DATE="${rest%%[[:space:]]*}"           # trailing \r of a CRLF file too
+}
+
 _arx_file_read() {
-    local archive="$ARX_FILE"
+    # Emit "<name> <sha> <date>" for every record in the archive file. The
+    # file is meant to be committed and shared, so its contents are untrusted
+    # input: every SHA is checked here, once for all consumers, before any of
+    # them reaches git – where a value like --output=<path> would be read as
+    # an option, not a revision. Lines that fail the check are reported and
+    # skipped.
+    local archive="$ARX_FILE" line n=0
     [[ -f "$archive" ]] || return 0
     while IFS= read -r line || [[ -n "$line" ]]; do
-        # Skip blank lines and comment lines
-        [[ -z "$line" || "$line" == \#* ]] && continue
-        printf '%s\n' "$line"
+        n=$(( n + 1 ))
+        [[ "$line" == \#* ]] && continue   # comment
+        if _arx_parse_record "$line"; then
+            printf '%s %s %s\n' "$ARX_NAME" "$ARX_SHA" "$ARX_DATE"
+        elif [[ "$line" == *[![:space:]]* ]]; then
+            printf 'git-arx: %s:%d: not an archive record ("<name> <sha> <date>") – ignored\n' \
+                "$archive" "$n" >&2
+        fi
     done < "$archive"
 }
 
@@ -318,27 +354,31 @@ _arx_read_all() {
         done < <(_arx_file_read)
     elif [[ "$ARX_STOREREFS" == "true" ]]; then
         _arx_refs_read
-    elif [[ "$ARX_STOREFILE" == "true" ]]; then
-        _arx_file_read
     else
-        printf 'git-arx: no storage backend enabled (set arx.storerefs=true or arx.storefile=true)\n' >&2
-        exit 1
+        _arx_file_read   # _arx_load_config guarantees at least one backend
     fi
 }
 
 _arx_write() {
+    # Refs first: a ref is what keeps the commit from gc, so when it can't be
+    # written (a name collision, a missing object) nothing may be recorded at
+    # all – a file entry alone would tell prune the branch is safe to delete.
+    # `|| return` keeps that order even where set -e is not in effect; the
+    # file write stays a plain command so set -e still guards its steps.
     local branch="$1" sha="$2" date="$3"
+    if [[ "$ARX_STOREREFS" == "true" ]]; then
+        _arx_refs_write "$branch" "$sha" || return
+    fi
     if [[ "$ARX_STOREFILE" == "true" ]]; then
         _arx_file_write "$branch" "$sha" "$date"
-    fi
-    if [[ "$ARX_STOREREFS" == "true" ]]; then
-        _arx_refs_write "$branch" "$sha"
     fi
 }
 
 _arx_write_bulk() {
     # Read "branch sha date" records from stdin and write them to all enabled
-    # backends, one bulk pass per backend (file first – same order as _arx_write).
+    # backends, one bulk pass per backend – refs first, as in _arx_write. The
+    # refs pass is one all-or-nothing transaction, so if it fails the file is
+    # left untouched and nothing from the batch is recorded anywhere.
     local -a records=()
     local line
     while IFS= read -r line; do
@@ -346,11 +386,16 @@ _arx_write_bulk() {
         records+=("$line")
     done
     [[ ${#records[@]} -eq 0 ]] && return 0
+    if [[ "$ARX_STOREREFS" == "true" ]]; then
+        # Callers print their per-entry messages before this flush, so say
+        # outright that none of them took effect.
+        if ! printf '%s\n' "${records[@]}" | _arx_refs_write_bulk; then
+            printf 'git-arx: the refs update failed, so nothing was archived (see the error above)\n' >&2
+            return 1
+        fi
+    fi
     if [[ "$ARX_STOREFILE" == "true" ]]; then
         printf '%s\n' "${records[@]}" | _arx_file_write_bulk
-    fi
-    if [[ "$ARX_STOREREFS" == "true" ]]; then
-        printf '%s\n' "${records[@]}" | _arx_refs_write_bulk
     fi
 }
 
@@ -383,9 +428,22 @@ _arx_authors_by_sha() {
     # --ignore-missing drops garbage-collected objects from the batch; without
     # it a single bad SHA makes `git log --no-walk <sha...>` abort with exit
     # 128 and print nothing, blanking the author for EVERY entry, not just the
-    # dead one.
+    # dead one. The SHAs go in on stdin rather than as arguments: --stdin
+    # mode refuses anything option-shaped, and there is no command-line
+    # length limit to hit (on Windows, a few hundred SHAs).
     [[ $# -eq 0 ]] && return 0
-    git log --no-walk --ignore-missing --format='%H %an' "$@" 2>/dev/null || true
+    printf '%s\n' "$@" | git log --no-walk --ignore-missing --stdin --format='%H %an' 2>/dev/null || true
+}
+
+_arx_prune_deletable() {   # sha existing_sha existing_as live remote_gone
+    # Whether prune may delete a local branch at <sha>, given the SHA archived
+    # under its name and the name its commit is archived under (either may be
+    # empty), and the state of its upstream – see INTERNALS (arx prune).
+    [[ "$2" == "$1" ]] && return 0
+    # Commit archived under another name. The second test is what separates
+    # a branch that was itself archived from one that merely shares a tip
+    # with an archived branch.
+    [[ -n "$3" && $4 -eq 0 ]] && [[ -n "$2" || $5 -eq 1 ]]
 }
 
 _arx_sort_keys() {
@@ -1169,6 +1227,21 @@ cmd_prune() {
         [[ -z "${arc_by_sha[$asha]:-}" ]] && arc_by_sha["$asha"]="$b" || true
     done < <(_arx_read_all)
 
+    # With both backends on, the union above decides what is archived, but
+    # only refs decide what may be deleted: a ref is what keeps the commit
+    # from gc once its branch is gone. An entry found only in the file – a
+    # drift `sync` repairs, or entries from a teammate's committed archive
+    # file – is reported instead of trusted.
+    local both=0
+    declare -A ref_by_name=() ref_by_sha=()
+    if [[ "$ARX_STOREREFS" == "true" && "$ARX_STOREFILE" == "true" ]]; then
+        both=1
+        while IFS=' ' read -r b asha adate rest; do
+            ref_by_name["$b"]="$asha"
+            [[ -z "${ref_by_sha[$asha]:-}" ]] && ref_by_sha["$asha"]="$b" || true
+        done < <(_arx_refs_read)
+    fi
+
     # Load all refs an upstream could point to (remote-tracking refs, plus
     # local branches for branch.<name>.remote=.) in one call – replaces a
     # per-branch `git rev-parse --verify` subprocess.
@@ -1179,7 +1252,7 @@ cmd_prune() {
 
     # Walk local branches, classifying each by the SHA it points at now.
     # %(upstream) last – see INTERNALS for the IFS tab-collapsing explanation.
-    local -a branches=() labels=() skipped=() conflicts=()
+    local -a branches=() labels=() skipped=() conflicts=() unprotected=()
     local branch sha upstream_ref existing_sha existing_as label kind remote_gone live
     while IFS=$'\t' read -r branch sha upstream_ref; do
         branch="${branch#refs/heads/}"
@@ -1193,15 +1266,15 @@ cmd_prune() {
         fi
 
         kind="" label="$branch"
-        if [[ "$existing_sha" == "$sha" ]]; then
+        if _arx_prune_deletable "$sha" "$existing_sha" "$existing_as" "$live" "$remote_gone"; then
             kind="delete"
-        elif [[ -n "$existing_as" && $live -eq 0 ]] \
-            && [[ -n "$existing_sha" || $remote_gone -eq 1 ]]; then
-            # Commit is archived under another name. The second test is what
-            # separates a branch that was itself archived from one that merely
-            # shares a tip with an archived branch – see INTERNALS.
-            kind="delete"
-            label="$branch (archived as \"$existing_as\")"
+            if [[ "$existing_sha" != "$sha" ]]; then
+                label="$branch (archived as \"$existing_as\")"
+            fi
+            if [[ $both -eq 1 ]] && ! _arx_prune_deletable "$sha" \
+                "${ref_by_name[$branch]:-}" "${ref_by_sha[$sha]:-}" "$live" "$remote_gone"; then
+                kind="unprotected"   # only the file has it
+            fi
         elif [[ -n "$existing_sha" && $live -eq 0 ]]; then
             # Name is archived but this commit is in no entry at all.
             kind="conflict"
@@ -1219,12 +1292,20 @@ cmd_prune() {
             conflicts+=("$branch (archived: ${existing_sha:0:8}, current: ${sha:0:8})")
             continue
         fi
+        if [[ "$kind" == "unprotected" ]]; then
+            unprotected+=("$label")
+            continue
+        fi
         branches+=("$branch")
         labels+=("$label")
     done < <(git for-each-ref \
         --format='%(refname)%09%(objectname)%09%(upstream)' refs/heads/)
 
-    if [[ ${#branches[@]} -eq 0 && ${#skipped[@]} -eq 0 && ${#conflicts[@]} -eq 0 ]]; then
+    # Conflicts and file-only entries both need the user's attention before
+    # they can be pruned, so either makes the run exit non-zero.
+    local held=$(( ${#conflicts[@]} + ${#unprotected[@]} ))
+
+    if [[ ${#branches[@]} -eq 0 && ${#skipped[@]} -eq 0 && $held -eq 0 ]]; then
         printf 'No archived branches found in local branches.\n'
         [[ $dry_run -eq 1 ]] && printf '(dry run – no changes written)\n' || true
         return 0
@@ -1248,10 +1329,16 @@ cmd_prune() {
         printf '\n'
     fi
 
+    if [[ ${#unprotected[@]} -gt 0 ]]; then
+        printf 'Skipped (archived in the file only, no ref protects the commit – run "git arx sync", then prune again):\n'
+        printf '  %s\n' "${unprotected[@]}"
+        printf '\n'
+    fi
+
     if [[ ${#branches[@]} -eq 0 ]]; then
         printf 'Nothing to delete.\n'
         [[ $dry_run -eq 1 ]] && printf '(dry run – no changes written)\n' || true
-        [[ ${#conflicts[@]} -gt 0 ]] && exit 1 || true
+        [[ $held -gt 0 ]] && exit 1 || true
         return 0
     fi
 
@@ -1274,9 +1361,10 @@ cmd_prune() {
 
     printf 'Done. Deleted %d branch(es)' "${#branches[@]}"
     [[ ${#conflicts[@]} -gt 0 ]] && printf ', %d conflict(s) skipped' "${#conflicts[@]}" || true
+    [[ ${#unprotected[@]} -gt 0 ]] && printf ', %d not protected by a ref skipped' "${#unprotected[@]}" || true
     printf '.\n'
     [[ $dry_run -eq 1 ]] && printf '(dry run – no changes written)\n' || true
-    [[ ${#conflicts[@]} -gt 0 ]] && exit 1 || true
+    [[ $held -gt 0 ]] && exit 1 || true
 }
 
 cmd_push() {
@@ -1353,11 +1441,17 @@ cmd_fetch() {
         remote_sha["${refname#"$refsprefix"}"]="$sha"
     done <<< "$ls_remote_out"
 
-    # Load local refs
-    declare -A local_sha=()
+    # Load local refs, and the tracking refs pull weighs them against: the
+    # remote's state as of the last push or pull.
+    declare -A local_sha=() base_sha=()
+    local remote_prefix="$ARX_REMOTE_PREFIX"
     while IFS=' ' read -r refname sha _rest; do
-        local_sha["${refname#"$refsprefix"}"]="$sha"
-    done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix" 2>/dev/null || true)
+        if [[ "$refname" == "$remote_prefix"* ]]; then
+            base_sha["${refname#"$remote_prefix"}"]="$sha"
+        else
+            local_sha["${refname#"$refsprefix"}"]="$sha"
+        fi
+    done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix" "$remote_prefix" 2>/dev/null || true)
 
     # Union of all branch names
     declare -A all_branches=()
@@ -1370,11 +1464,13 @@ cmd_fetch() {
     fi
 
     # Collect rows as tab-separated data for sorting
+    # Same decision pull makes – see cmd_pull.
     local -a rows=()
-    local branch r_sha l_sha display_sha status
+    local branch r_sha l_sha b_sha display_sha status
     for branch in "${!all_branches[@]}"; do
         r_sha="${remote_sha[$branch]:-}"
         l_sha="${local_sha[$branch]:-}"
+        b_sha="${base_sha[$branch]:-}"
         if [[ -n "$r_sha" && -z "$l_sha" ]]; then
             display_sha="${r_sha:0:8}"
             status="new"
@@ -1384,16 +1480,22 @@ cmd_fetch() {
         elif [[ "$r_sha" == "$l_sha" ]]; then
             display_sha="${l_sha:0:8}"
             status="up to date"
+        elif [[ "$r_sha" == "$b_sha" ]]; then
+            display_sha="${l_sha:0:8}"
+            status="ahead"        # re-archived here, not pushed yet
+        elif [[ "$l_sha" == "$b_sha" ]]; then
+            display_sha="${r_sha:0:8}"
+            status="changed"      # changed on the remote only
         else
             display_sha="${r_sha:0:8}"
-            status="changed"
+            status="conflict"     # changed on both sides
         fi
         rows+=("${branch}"$'\t'"${display_sha}"$'\t'"${status}")
     done
 
-    local C_GREEN='' C_YELLOW='' C_DIM='' C_RESET=''
+    local C_RED='' C_GREEN='' C_YELLOW='' C_DIM='' C_RESET=''
     if [[ -t 1 ]]; then
-        C_GREEN=$'\033[32m' C_YELLOW=$'\033[33m' C_DIM=$'\033[2m' C_RESET=$'\033[0m'
+        C_RED=$'\033[31m' C_GREEN=$'\033[32m' C_YELLOW=$'\033[33m' C_DIM=$'\033[2m' C_RESET=$'\033[0m'
     fi
 
     printf '%-40s %-9s %s\n' "BRANCH" "SHA" "STATUS"
@@ -1405,6 +1507,8 @@ cmd_fetch() {
             "new")        colored_status="${C_GREEN}${status}${C_RESET}" ;;
             "up to date") colored_status="${C_DIM}${status}${C_RESET}" ;;
             "changed")    colored_status="${C_YELLOW}${status}${C_RESET}" ;;
+            "ahead")      colored_status="${C_DIM}${status}${C_RESET}" ;;
+            "conflict")   colored_status="${C_RED}${status}${C_RESET}" ;;
             "local")      colored_status="${C_DIM}${status}${C_RESET}" ;;
             *)            colored_status="$status" ;;
         esac
@@ -1415,18 +1519,63 @@ cmd_fetch() {
 cmd_pull() {
     _arx_require_storage refs
     local refsprefix="$ARX_REFSPREFIX" remote_prefix="$ARX_REMOTE_PREFIX"
+
+    # Snapshot before fetching: the local archive refs, and the tracking refs
+    # – the remote's state as of the last push or pull. A local entry that no
+    # longer matches its tracking ref was re-archived here since then, and
+    # overwriting it with the remote's older copy would lose that commit for
+    # good: refs/arx/* keeps no reflog.
+    declare -A local_sha=() base_sha=()
+    local refname sha name
+    while IFS=' ' read -r refname sha; do
+        if [[ "$refname" == "$remote_prefix"* ]]; then
+            base_sha["${refname#"$remote_prefix"}"]="$sha"
+        else
+            local_sha["${refname#"$refsprefix"}"]="$sha"
+        fi
+    done < <(git for-each-ref --format='%(refname) %(objectname)' "$refsprefix" "$remote_prefix")
+
     # Fetch remote arx refs into the tracking namespace, then sync to local refs.
     # '+' allows non-fast-forward updates (after arx push --force on another
     # machine); --prune drops tracking refs whose remote counterpart is gone.
     git fetch --prune origin "+${refsprefix}*:${remote_prefix}*"
-    while IFS=' ' read -r refname sha _rest; do
-        git update-ref "${refsprefix}${refname#"$remote_prefix"}" "$sha"
+
+    # Take the remote's SHA where the local entry is missing or unchanged
+    # since the last sync; keep the local one where only this side changed
+    # (not pushed yet), and report it where both did. All updates go through
+    # one update-ref transaction, each conditional on the local value seen
+    # above.
+    local -a updates=() kept=()
+    local l b
+    while IFS=' ' read -r refname sha; do
+        name="${refname#"$remote_prefix"}"
+        l="${local_sha[$name]:-}" b="${base_sha[$name]:-}"
+        if [[ -z "$l" ]]; then
+            updates+=("create ${refsprefix}${name} ${sha}")
+        elif [[ "$l" == "$sha" || "$sha" == "$b" ]]; then
+            :   # in sync, or re-archived here and not pushed yet
+        elif [[ "$l" == "$b" ]]; then
+            updates+=("update ${refsprefix}${name} ${sha} ${l}")
+        else
+            kept+=("$name (local: ${l:0:8}, remote: ${sha:0:8})")
+        fi
     done < <(git for-each-ref --format='%(refname) %(objectname)' "$remote_prefix")
+    if [[ ${#updates[@]} -gt 0 ]]; then
+        printf '%s\n' "${updates[@]}" | git update-ref --stdin
+    fi
 
     # If file backend is also enabled, sync fetched refs into .gitarchive
     if [[ "$ARX_STOREFILE" == "true" ]]; then
         _arx_refs_read | _arx_file_write_bulk
         printf 'Synced fetched refs to .gitarchive\n'
+    fi
+
+    if [[ ${#kept[@]} -gt 0 ]]; then
+        printf 'Kept local (changed both here and on the remote since the last push or pull):\n'
+        printf '  %s\n' "${kept[@]}"
+        printf 'To keep both, rename the local entry ("git arx rename <branch> <new-name>") and pull again;\n'
+        printf 'to replace the remote copy instead, run "git arx push --force".\n'
+        exit 1
     fi
 }
 

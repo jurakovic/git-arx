@@ -33,8 +33,8 @@ export GIT_CONFIG_GLOBAL=/dev/null
 
 SECTIONS=(
     help add remove rename list update sort_tiebreak log checkout prune merge
-    refs_backend both_backend push_pull purge sync slashed_branches double_add
-    config_bool error_cases overwrite_guard
+    refs_backend both_backend push_pull purge sync file_records slashed_branches
+    double_add config_bool error_cases overwrite_guard
 )
 
 # ---------------------------------------------------------------------------
@@ -750,6 +750,32 @@ test_both_backend() {
     arx update > /dev/null
     check "both: update bulk-writes all branches to file" file_has .gitarchive "feature/beta" "fix/gamma"
     check "both: update bulk-writes all branches to refs" ref_exists refs/arx/feature/beta refs/arx/fix/gamma
+
+    # Refs are written first: when git refuses the refs update – here
+    # refs/arx/collide/next can't coexist with the archived refs/arx/collide –
+    # nothing from the batch may reach the file, or prune would take a
+    # file-only entry as proof the branch is safe to delete
+    reset_archive both
+    arx add feature/alpha collide > /dev/null
+    git branch collide/next "$(git commit-tree -m next "HEAD^{tree}")"
+    set_gone_upstream collide/next
+    run arx update
+    nok "both: failed refs write: update exits nonzero"
+    has "both: failed refs write: says nothing was archived" "nothing was archived"
+    check "both: failed refs write: colliding entry not in file"      ! file_has .gitarchive "collide/next"
+    check "both: failed refs write: rest of the batch not in file"    ! file_has .gitarchive "feature/beta"
+
+    # prune deletes on refs alone: an entry only the file holds (drift, or a
+    # teammate's committed archive) is reported until sync backs it with a ref
+    reset_archive both
+    printf '# git-arx archive\nfeature/alpha %s 2025-01-01T00:00:00+00:00\n' "$SHA_ALPHA" > .gitarchive
+    run arx prune --force
+    nok   "prune (both): file-only entry exits nonzero"
+    has   "prune (both): reports the file-only entry" "archived in the file only" "feature/alpha"
+    check "prune (both): keeps the branch" ref_exists refs/heads/feature/alpha
+    arx sync > /dev/null
+    arx prune --force > /dev/null
+    check "prune (both): deletes it once sync wrote the ref" ! ref_exists refs/heads/feature/alpha
 }
 
 test_push_pull() {
@@ -768,9 +794,13 @@ test_push_pull() {
     assert_out   "fetch: shows up to date after push" "up to date" arx fetch
     assert_fails "fetch: unknown option"                           arx fetch --bogus
 
-    # Locally re-archive one branch at a different SHA so fetch shows "changed"
+    # Locally re-archive one branch at a different SHA: fetch shows it as
+    # "ahead", and pull must keep it – the remote's copy is the older one,
+    # and refs/arx/* keeps no reflog to recover an overwritten commit from
     git update-ref refs/arx/feature/alpha "$SHA_BETA"
-    assert_out "fetch: shows changed when SHA differs" "changed" arx fetch
+    assert_out "fetch: shows ahead when re-archived locally" "ahead" arx fetch
+    assert_ok  "pull: succeeds with a local re-archive"           arx pull
+    check "pull: keeps an entry re-archived locally" ref_is refs/arx/feature/alpha "$SHA_BETA"
     git update-ref refs/arx/feature/alpha "$SHA_ALPHA"  # restore
 
     # Fresh clone – test pull
@@ -821,8 +851,22 @@ test_push_pull() {
     arx push --force > /dev/null
     cd "$repo2"
     set_storage refs
+    assert_out "fetch: shows changed when only the remote moved" "changed" arx fetch
     assert_ok "pull: succeeds after remote force-push" arx pull
     check "pull: local ref updated to force-pushed SHA" ref_is refs/arx/feature/alpha "$sha_initial"
+
+    # Both sides re-archived since the last sync: neither copy may be lost,
+    # so pull keeps the local one and says so
+    git update-ref refs/arx/feature/alpha "$SHA_BETA"    # an object repo2 has
+    cd "$REPO"
+    git update-ref refs/arx/feature/alpha "$SHA_GAMMA"
+    arx push --force > /dev/null
+    cd "$repo2"
+    assert_out "fetch: shows conflict when both sides changed" "conflict" arx fetch
+    run arx pull
+    nok "pull: both sides changed: nonzero"
+    has "pull: both sides changed: reports the kept entry" "Kept local" "feature/alpha"
+    check "pull: both sides changed: keeps the local copy" ref_is refs/arx/feature/alpha "$SHA_BETA"
 
     # pull prunes tracking refs for refs deleted on the remote
     # (feature/beta was removed from the remote by push --prune above,
@@ -933,6 +977,23 @@ test_sync() {
     nok "sync: nonzero when refs-only"
 }
 
+test_file_records() {
+    section "archive file records"
+    arx add feature/alpha > /dev/null
+
+    # The archive file is meant to be committed and shared, so its contents
+    # are untrusted: a SHA field shaped like a git option must never reach
+    # git, where --output=<path> would overwrite any file the user can write
+    printf 'evil --output=%s 2025-01-01T00:00:00+00:00\n' "$SANDBOX/pwned" >> .gitarchive
+    run arx list --author
+    has   "records: malformed line is reported" "not an archive record"
+    has   "records: valid entries still listed" "feature/alpha"
+    lacks "records: malformed entry not listed" "evil"
+    check "records: list --author passes nothing to git as an option"   ! test -e "$SANDBOX/pwned"
+    arx status --all > /dev/null 2>&1
+    check "records: status --all passes nothing to git as an option"    ! test -e "$SANDBOX/pwned"
+}
+
 test_slashed_branches() {
     section "branch names with slashes"
 
@@ -1034,6 +1095,16 @@ test_error_cases() {
     set_storage refs
     assert_out "merge: requires file" "requires file storage" \
         arx merge /dev/null /dev/null -o /dev/null
+
+    # Neither backend enabled: nothing can be stored, so commands must refuse
+    # rather than report "Archived" having written nothing
+    git config arx.storerefs false
+    git config arx.storefile false
+    run arx add feature/alpha
+    has   "no backend: add reports it" "no storage backend enabled"
+    nok   "no backend: add exits nonzero"
+    lacks "no backend: add does not claim success" "Archived"
+    assert_fails "no backend: update exits nonzero" arx update
 
     # A bare repo is a repo, but has no work tree to resolve the archive path
     # against – it must say so rather than fall through to a raw git error.

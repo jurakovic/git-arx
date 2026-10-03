@@ -271,6 +271,13 @@ A branch whose **name** is in the archive but which has moved on to a commit tha
 
 Run `git arx add <branch> --force` to re-archive it at its current SHA, then prune again. If several branches are affected and their remotes are gone, `git arx update --force` re-archives them in one go.
 
+With both backends enabled, only refs count when deciding what to delete – a ref is what keeps the commit from being garbage collected once its branch is gone. A branch whose archive entry exists only in `.gitarchive` (the backends have drifted, or the entry came from a teammate's committed archive file) is skipped with a notice, and the command exits non-zero. Run `git arx sync` to write the missing refs, then prune again:
+
+```
+# Skipped (archived in the file only, no ref protects the commit – run "git arx sync", then prune again):
+#   feature/from-teammate
+```
+
 Branches that are not in the archive at all are left alone silently, as are branches whose remote branch still exists. If you are currently checked out on an archived branch, it is skipped with a notice – including when it has moved past its archived SHA.
 
 **Options:**
@@ -528,7 +535,9 @@ git arx fetch
 |---|---|
 | `new` | On the remote, not locally — `pull` would add it. |
 | `up to date` | Same SHA locally and on the remote — `pull` is a no-op for this branch. |
-| `changed` | Different SHAs — `pull` would update local to the remote SHA. |
+| `changed` | Changed on the remote since your last push or pull — `pull` would update local to the remote SHA. |
+| `ahead` | Re-archived locally since your last push or pull, remote unchanged — `pull` keeps your copy; `push` would publish it. |
+| `conflict` | Changed on both sides since your last push or pull — `pull` keeps your copy and reports it. |
 | `local` | Local only, not on the remote — unaffected by `pull`. |
 
 Requires `arx.storerefs` to be enabled.
@@ -539,12 +548,23 @@ Requires `arx.storerefs` to be enabled.
 
 Fetch archived refs from the remote. Remote-tracking refs are updated so that `git arx list` and `git arx status --all` reflect the current remote state — including refs force-pushed from another machine (`git arx push --force`) and refs deleted on the remote, whose tracking refs are pruned. Local archive entries themselves are never deleted by `pull`. If `arx.storefile` is also enabled, the `.gitarchive` file is automatically updated to match.
 
+A local entry is updated only when the remote's copy is the newer one: entries missing locally are added, and entries you have not changed since your last push or pull take the remote's SHA. An entry you re-archived since then (`git arx add --force`) is kept as is – `push` publishes it. If it changed on both sides, `pull` keeps your copy, reports it, and exits non-zero:
+
 ```bash
 git arx pull
 # From origin
-#  * [new ref]   refs/arx/feature/my-feature -> refs/arx/feature/my-feature
+#  * [new ref]   refs/arx/feature/my-feature -> refs/arx-remote/origin/feature/my-feature
 # Synced fetched refs to .gitarchive
 ```
+
+```
+# Kept local (changed both here and on the remote since the last push or pull):
+#   feature/my-feature (local: a1b2c3d4, remote: deadbeef)
+# To keep both, rename the local entry ("git arx rename <branch> <new-name>") and pull again;
+# to replace the remote copy instead, run "git arx push --force".
+```
+
+`git arx fetch` previews these outcomes without changing anything.
 
 Requires `arx.storerefs` to be enabled.
 
@@ -697,6 +717,8 @@ feature/my-feature a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2 2025-11-15T10:30:00+
 fix/old-bug deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 ```
 
+Since the file can be committed and shared, git-arx treats its contents as untrusted input. A line whose SHA is not a full hex object name is reported and ignored, so nothing from the file ever reaches git as a command-line option.
+
 **Strengths:**
 - Human-readable – inspect it with any text editor or `cat .gitarchive`
 - Portable – copy it anywhere, email it, commit it to the repo
@@ -716,7 +738,7 @@ git config arx.storerefs true
 git config arx.storefile true
 ```
 
-With both enabled, writes go to both backends; reads prefer refs and supplement with any file-only entries. The `git arx sync` command reconciles the two if they drift.
+With both enabled, writes go to refs first, then to the file – if git refuses the ref (for example a [name collision](#git-arx-rename-old-name-new-name)), nothing is written to either. Reads prefer refs and supplement with any file-only entries. The `git arx sync` command reconciles the two if they drift.
 
 ### Clone size
 
@@ -747,6 +769,8 @@ Controls whether the file backend (`.gitarchive`) is used. Default: `false`.
 git config arx.storefile true   # enable for human-readable archives or team sharing
 git config arx.storefile false  # default
 ```
+
+At least one of `arx.storerefs` and `arx.storefile` must be enabled. With both disabled there is nowhere to store anything, so every command stops with an error.
 
 ### `arx.filepath`
 

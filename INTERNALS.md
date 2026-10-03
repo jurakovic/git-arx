@@ -120,6 +120,8 @@ Startup costs exactly two git subprocesses, which matters because on Windows a g
 
 `-z` output separates records with NUL and the key from its value with a newline, so values containing spaces or newlines survive parsing intact, and a record with no newline at all is a key written without a value. Keys are matched in output order and later definitions overwrite earlier ones, which reproduces how `git config --get` resolves a key set in more than one scope.
 
+With neither `arx.storerefs` nor `arx.storefile` enabled, `_arx_load_config` stops with an error: every command after it reads or writes the archive, and there is nowhere to do either. It has to be checked here rather than where the archive is read: `_arx_read_all` mostly runs inside a process substitution (`done < <(_arx_read_all)`), where an `exit` ends only that subshell – the command carries on with an empty archive, and `add` or `update` print `Archived:` having stored nothing.
+
 **`_arx_bool()`** reproduces `git config --type=bool` for `arx.storerefs` and `arx.storefile`, the two keys that decide which storage backends a command writes to – a value git reads as false must not be read here as true. It follows git's two stages: the names `true`/`yes`/`on` and `false`/`no`/`off` case-insensitively, then git's *integer* parser, since every number is a boolean too (non-zero true, zero false). Numbers follow C literal rules – leading whitespace is skipped, `0x…` is hex, a leading `0` is octal (`010` is 8, while `08` is not a number at all), and a `k`/`m`/`g` suffix multiplies by 1024/1024²/1024³ – and the result must fit in an `int`, so `3g` and `9999999999` are not booleans. A key written with no value at all is git's implicit `true`, an explicitly empty value is `false`, and anything git would reject keeps the key's default rather than aborting, since a typo in one setting should not make every command unusable.
 
 Bash arithmetic is 64-bit where git's target is a 32-bit `int`, and it wraps silently rather than failing, so an over-long literal would evaluate to an arbitrary in-range value and pass the range check. Literals are therefore screened on significant digit count before evaluation (at most 10 decimal, 11 octal or 8 hex, none of which can wrap 64 bits), and the `k`/`m`/`g` factor is applied by dividing the limit rather than multiplying the value, which would overflow for exactly the cases being rejected.
@@ -158,11 +160,11 @@ Refs are treated as primary in the union merge. This reflects the refs backend's
 
 ### `_arx_write(branch, sha, date)`
 
-Writes to all enabled backends. When both are enabled, writes to file first, then refs. Order doesn't matter for correctness; file first means a crash between the two writes leaves the more portable copy updated.
+Writes to all enabled backends. When both are enabled, writes to refs first, then the file, and the order matters. A ref is what protects the commit from gc, and `prune` deletes branches whose commit the archive holds – so a file entry the refs backend does not back would let a branch be deleted with nothing keeping its commit alive. Refs can be refused where the file never is (a directory/file name collision such as `update` vs `update/x`, an object that does not exist), so the ref is written first and the file only if that succeeded. The refs write is followed by `|| return`, which keeps the order even where `set -e` is not in effect; the file write stays a plain command, so `set -e` still guards each of its steps.
 
 ### `_arx_write_bulk()`
 
-Reads `branch sha date` records from stdin and writes them to all enabled backends in one bulk pass per backend (file first, same order as `_arx_write`): `_arx_file_write_bulk` does a single filter-then-append rewrite of `.gitarchive`, and `_arx_refs_write_bulk` updates all refs in a single atomic `git update-ref --stdin` transaction. The transaction is all-or-nothing – if any ref update fails (e.g. a directory/file ref-name conflict), none of the refs are written. Used by `update` to flush all archive writes at once.
+Reads `branch sha date` records from stdin and writes them to all enabled backends in one bulk pass per backend (refs first, same order as `_arx_write`): `_arx_refs_write_bulk` updates all refs in a single atomic `git update-ref --stdin` transaction, and `_arx_file_write_bulk` does a single filter-then-append rewrite of `.gitarchive`. The transaction is all-or-nothing – if any ref update fails (e.g. a directory/file ref-name conflict), none of the refs are written, the file is not touched, and the function says that nothing was archived, since callers such as `update` have already printed their per-entry `Archived:` lines. Used by `update` to flush all archive writes at once.
 
 ### `_arx_delete(branch)`
 
@@ -192,6 +194,9 @@ fix/bug-42 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2025-10-01T08:00:00+00:00
 - ISO-8601 date with timezone offset from `git log -1 --format=%aI` (author date of HEAD commit)
 - `#` lines are comments, skipped on read
 - Blank lines are skipped on read
+- Any other line must be a record: `_arx_parse_record` matches it against `ARX_RECORD_RE` – a name, then a full 40- or 64-digit hex SHA (SHA-1 or SHA-256 repositories), then the date. A line that does not match is reported (`file:line: not an archive record`) and skipped.
+
+That validation is a security boundary, not tidiness. The file is meant to be committed and shared, so its contents are untrusted input, and the SHA field is later handed to git – `list --author` and `status --all` look up authors with `git log`, where an entry like `evil --output=/home/you/.bashrc ...` would be an option that overwrites the file. Checking every SHA once in `_arx_file_read` protects every consumer; `_arx_authors_by_sha` additionally passes SHAs on stdin (`git log --stdin`), where git refuses anything option-shaped and there is no command-line length limit to hit. `_arx_parse_record` assigns `ARX_NAME`, `ARX_SHA` and `ARX_DATE` rather than printing them, because it runs once per line and capturing output would cost a subshell each time. It also lowercases the SHA and strips the `\r` a CRLF checkout leaves at the end of each line.
 
 The format is intentionally simple. Since git branch names cannot contain spaces (git itself rejects them), space as delimiter is unambiguous and requires no quoting or escaping.
 
@@ -272,7 +277,18 @@ After a successful push, `arx push` updates a local remote-tracking namespace de
 
 `arx purge` deletes **every** `refs/arx/*` ref the remote holds, independent of the local archive — the unconditional counterpart to `--prune`'s "delete what has no local counterpart". It enumerates the remote refs with `git ls-remote origin 'refs/arx/*'` (no objects transferred), deletes them all in a single `git push origin --delete <ref>...`, then drops every local remote-tracking ref since the remote now holds none. It exists for the "remote as a transfer channel" workflow: secondaries `push`, the primary `pull`s, and `purge` clears the remote so it never accumulates an archive. Confirmation-gated like `prune` (bypass with `--force`); `--dry-run` lists the remote refs without deleting.
 
-`arx pull` inverts this: it fetches `refs/arx/*` from the remote into the tracking namespace first, then copies those refs into `refs/arx/*` locally. This preserves a clean record of the last known remote state regardless of any local-only archive entries that were added between pulls. The fetch refspec is forced (`+` prefix) so that refs re-archived at a different SHA and pushed with `arx push --force` from another machine are accepted (a plain refspec would reject them as non-fast-forward and abort the pull). The fetch also uses `--prune`, so tracking refs whose remote counterpart was deleted (e.g. via `arx push --delete` elsewhere) are removed — without it the REMOTE column would keep reporting `pushed` for refs that no longer exist on the remote. Note that pruning only affects the tracking namespace: the corresponding local `refs/arx/*` entry is kept, since the local archive is authoritative for local entries.
+`arx pull` inverts this: it fetches `refs/arx/*` from the remote into the tracking namespace first, then copies those refs into `refs/arx/*` locally. This preserves a clean record of the last known remote state regardless of any local-only archive entries that were added between pulls.
+
+The copy is a three-way decision, because the tracking refs as they were *before* the fetch record what the remote held at the last push or pull. For each fetched ref, with *local* the current `refs/arx/*` value, *base* the pre-fetch tracking value and *remote* the fetched one:
+
+| Condition | Action |
+|---|---|
+| no local entry | add it (covers entries removed locally – recoverable, as `status --all` says) |
+| local = remote, or remote = base | nothing – in sync, or re-archived here and not pushed yet |
+| local = base | take the remote's SHA – it changed on the remote only |
+| otherwise | keep local, report it, exit 1 – changed on both sides (or no base to tell) |
+
+Copying every tracking ref unconditionally, as pull once did, silently reverted entries re-archived locally since the last push – and `refs/arx/*` has no reflog, so the overwritten commit was gone for good once its branch had been pruned. Both snapshots come from a single `for-each-ref` over the two namespaces, and all updates go through one `git update-ref --stdin` transaction, each conditioned on the local value the decision was based on (`create`, or `update <ref> <new> <old>`). The fetch refspec is forced (`+` prefix) so that refs re-archived at a different SHA and pushed with `arx push --force` from another machine are accepted (a plain refspec would reject them as non-fast-forward and abort the pull). The fetch also uses `--prune`, so tracking refs whose remote counterpart was deleted (e.g. via `arx push --delete` elsewhere) are removed — without it the REMOTE column would keep reporting `pushed` for refs that no longer exist on the remote. Note that pruning only affects the tracking namespace: the corresponding local `refs/arx/*` entry is kept, since the local archive is authoritative for local entries.
 
 ```bash
 # pull fetches into tracking namespace (forced + pruned), then promotes to local refs
@@ -282,11 +298,13 @@ git fetch --prune origin '+refs/arx/*:refs/arx-remote/origin/*'
 
 When the file backend is also enabled, `pull` syncs all fetched entries to `.gitarchive` via `_arx_file_write_bulk` — one filter-then-append rewrite for the whole batch instead of one full file rewrite per entry (which would be O(n²)). File-only entries are preserved, matching the per-entry write semantics.
 
-`arx fetch` is a read-only preview of what `arx pull` would bring in. It uses `git ls-remote` to query the remote ref list without downloading any objects, then compares against local `refs/arx/*`:
+`arx fetch` is a read-only preview of what `arx pull` would bring in. It uses `git ls-remote` to query the remote ref list without downloading any objects, then compares against local `refs/arx/*` and the tracking refs, making the same three-way decision as pull:
 
 - `new` — on the remote, not locally; pull would add it
 - `up to date` — same SHA on both sides; pull is a no-op for this branch
-- `changed` — different SHAs; pull would overwrite local with the remote SHA
+- `changed` — changed on the remote since the last push or pull; pull would update local to the remote SHA
+- `ahead` — re-archived locally, remote unchanged; pull keeps the local SHA
+- `conflict` — changed on both sides; pull keeps the local SHA and reports it
 - `local` — local only, not on the remote; unaffected by pull
 
 This is also how fully automatic remote sync is possible without `git arx push/pull` when using both backends: if `.gitarchive` is committed to the repository, it syncs as part of the normal git object graph.
@@ -362,10 +380,10 @@ git for-each-ref \
 
 **`set -u` and associative arrays.** Accessing a missing key in an associative array with `set -u` enabled triggers an "unbound variable" error in bash 4.x. All array reads use `${arr[key]:-}` to provide an explicit empty-string default and suppress the error.
 
-**`arx list --author`** – archived SHAs are not local branch refs, so `git for-each-ref` does not apply. Instead, all SHAs are collected from the sorted entries and passed to a single `git log --no-walk` call, reducing N subprocess calls to one:
+**`arx list --author`** – archived SHAs are not local branch refs, so `git for-each-ref` does not apply. Instead, all SHAs are collected from the sorted entries and fed to a single `git log --no-walk` call on stdin, reducing N subprocess calls to one:
 
 ```bash
-git log --no-walk --format='%H %an' sha1 sha2 sha3 ...
+printf '%s\n' sha1 sha2 sha3 ... | git log --no-walk --ignore-missing --stdin --format='%H %an'
 ```
 
 The result is stored in `author_by_sha[sha]=name` and looked up during rendering. gc'd commits are absent from the output and fall back to `(gc)` via `${author_by_sha[$sha]:-\(gc\)}`.
@@ -432,7 +450,9 @@ The two **"archived as"** rows cover the case where only the commit matches, not
 
 The **conflict** row is the one that must not delete: the branch has moved past its archived SHA and its current commit is in no entry at all, so `git branch -D` would make it unreachable. Branches with a live upstream are excluded — their commits are on the remote, and `update` does not act on them either. Exiting 1 for skipped conflicts matches `update` and `sync`.
 
-Both halves are bulk operations: one `git for-each-ref refs/heads/` call supplies every branch name, SHA, and upstream (the archive lookups are hash hits, not `git rev-parse --verify` subprocesses), and the deletion is a single `git branch -D b1 b2 ...` call for the whole batch – git itself prints the per-branch `Deleted branch ... (was ...).` lines. The `existing_refs` load adds one further `for-each-ref`, for three subprocesses total regardless of branch count.
+**With both backends enabled**, the table is applied twice. The union of both backends (as `_arx_read_all` reads it) decides whether a branch is archived; the refs backend alone decides whether it may be deleted, because a ref is what keeps the commit from gc once the branch is gone. A branch that the union marks for deletion but refs alone do not – its entry exists only in the file, through drift or a teammate's committed `.gitarchive` – is listed as skipped with a pointer to `git arx sync`, and the run exits 1 like a conflict. `_arx_prune_deletable` holds the delete rows of the table so both passes use the same rule. With a single backend, that backend decides both.
+
+Both halves are bulk operations: one `git for-each-ref refs/heads/` call supplies every branch name, SHA, and upstream (the archive lookups are hash hits, not `git rev-parse --verify` subprocesses), and the deletion is a single `git branch -D b1 b2 ...` call for the whole batch – git itself prints the per-branch `Deleted branch ... (was ...).` lines. The `existing_refs` load adds one further `for-each-ref`, for three subprocesses total regardless of branch count (four with both backends enabled, which read the refs once more on their own).
 
 Key behaviors:
 - The currently checked-out branch is always skipped (git would reject the deletion anyway) and listed separately with a "Skipped (currently checked out)" notice. This takes precedence over conflict classification, so a branch that has moved past its archived SHA while checked out is a skip, not a failure.
@@ -523,6 +543,7 @@ test_both_backend  both backends enabled (union reads, sync)
 test_push_pull     git arx push / fetch / pull (requires a bare remote)
 test_purge         git arx purge (--dry-run, --force, empty remote)
 test_sync          git arx sync (--dry-run, --force-file, --force-refs)
+test_file_records  archive file parsing: malformed and hostile lines
 test_slashed_branches  branch names with slashes
 test_double_add    idempotency of add
 test_config_bool   git boolean spellings for storage flags end to end, then a
