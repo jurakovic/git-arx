@@ -495,14 +495,15 @@ The one exception is the boolean sweep in `test_config_bool`, which extracts `_a
 ### Running the tests
 
 ```bash
-bash test.sh
+bash test.sh                # every section
+bash test.sh prune sync     # only the named sections (test_prune, test_sync)
 ```
 
-No install required. The script resolves the path to `git-arx` relative to its own location, so it works from any working directory.
+No install required. The script resolves the path to `git-arx` relative to its own location, so it works from any working directory, and runs it as `bash git-arx`, so the file does not need its executable bit.
 
 ### Structure
 
-The suite is organized into sections, each exercising one command or scenario:
+The suite is organized into sections, each exercising one command or scenario. The names without the `test_` prefix are what `bash test.sh <section>...` accepts:
 
 ```
 test_help          git arx help / -h
@@ -520,6 +521,7 @@ test_merge         git arx merge (dedup, conflicts)
 test_refs_backend  refs-only storage
 test_both_backend  both backends enabled (union reads, sync)
 test_push_pull     git arx push / fetch / pull (requires a bare remote)
+test_purge         git arx purge (--dry-run, --force, empty remote)
 test_sync          git arx sync (--dry-run, --force-file, --force-refs)
 test_slashed_branches  branch names with slashes
 test_double_add    idempotency of add
@@ -530,13 +532,19 @@ test_error_cases   unknown commands, missing args, bad config, running
 test_overwrite_guard   bytes past the final { main; exit; } are never executed
 ```
 
-Each section uses `assert_ok`, `assert_fails`, and `assert_out` helpers. `assert_out` greps the combined stdout+stderr for a fixed string – tests are intentionally coarse-grained (output substring match) rather than exact, so minor wording changes in messages don't break the suite.
+Assertions come in two layers. `run cmd...` executes a command once and keeps its combined stdout+stderr in `OUT` and its exit status in `RC`; `ok` / `nok` then check the status and `has` / `lacks` check `OUT` for fixed strings, so one invocation serves every assertion about it. `assert_ok`, `assert_fails` and `assert_out` are the one-shot forms (run, then a single check). `check label [!] cmd...` asserts on state instead of output – `ref_exists`, `ref_is`, `remote_has`, `file_has`, or any `test` expression. Output checks are intentionally coarse-grained (substring match) rather than exact, so minor wording changes in messages don't break the suite.
+
+The suite's runtime is almost entirely process spawning – each `git-arx` invocation is a fresh bash parsing the whole script plus a few git subprocesses – so the helpers avoid spawning anything they can do in bash: matching is `[[ $OUT == *"$pattern"* ]]` rather than a `grep` pipeline, `file_has` reads with the `read` builtin, and `git-arx` is invoked as `bash git-arx` rather than through its `#!/usr/bin/env bash` shebang, which costs a second process (`env`). This matters most on Windows, where spawning a process is an order of magnitude slower than on Linux.
 
 ### Test isolation
 
-Each test section resets the archive state via `reset_archive()` before running. This deletes `.gitarchive` and removes all `refs/arx/` refs, then resets storage to `file`-only. Branches deleted during a test are recreated by `recreate_branches()` where needed.
+`make_fixture` builds one pristine fixture in a `mktemp -d` directory: a bare `remote.git` and a clone of it holding the default branch (pushed) and three never-pushed branches, `feature/alpha`, `feature/beta` and `fix/gamma`, with `file` storage. Every section then runs in the background in its own copy of that fixture (`run_section`), so no section can see state another one left behind, and all sections run in parallel. Each writes to its own log; the main shell waits for the sections in order, printing each log and tallying its PASS / FAIL lines as that section finishes. A section that dies part-way – an unexpected failure under `set -e` – is reported as one more failure, and the other sections are unaffected.
 
-The entire repo lives in a `mktemp -d` temporary directory and is cleaned up via a `trap ... EXIT` at the end of the run.
+Within a section, `reset_archive [file|refs|both]` empties both backends (deletes `.gitarchive` and every `refs/arx/` ref) and sets storage, `file` by default. `reset_branches` puts the three fixture branches back at their fixture commits, recreating any that a scenario deleted.
+
+The suite sets `GIT_CONFIG_GLOBAL=/dev/null`, so the user's global git config does not leak into the fixtures – `commit.gpgsign` would sign (or prompt for) every fixture commit, and settings like `branch.autoSetupMerge` or `fetch.prune` change the very branch states under test.
+
+The temporary directory is removed by a `trap ... EXIT`, which also runs when the suite is interrupted.
 
 ---
 
