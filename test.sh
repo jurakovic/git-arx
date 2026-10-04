@@ -206,6 +206,38 @@ test_help() {
     has "help shows USAGE"    "USAGE"
     has "help shows COMMANDS" "COMMANDS"
     assert_ok "-h exits 0" arx -h
+
+    # Every command's -h, --help and "help <cmd>" print its help: the row the
+    # overview shows, a blank line, then details. Run outside any repo – help
+    # must not need one.
+    local overview cmd summary
+    overview=$(arx help)
+    mkdir "$SANDBOX/norepo"
+    for cmd in add remove rename status update list log checkout prune merge \
+               push fetch pull purge sync config upgrade; do
+        run in_dir "$SANDBOX/norepo" arx "$cmd" -h
+        ok  "$cmd -h: exits 0 outside a repo"
+        has "$cmd -h: has details" $'\n\n'
+        summary="${OUT%%$'\n\n'*}"
+        if [[ "$summary" == "  $cmd"[\ \|]* && "$overview" == *"$summary"* ]]; then
+            pass "$cmd -h: starts with its overview row"
+        else
+            fail "$cmd -h: starts with its overview row"; got
+        fi
+        assert_out "$cmd --help" "$summary" in_dir "$SANDBOX/norepo" arx "$cmd" --help
+        assert_out "help $cmd"   "$summary" in_dir "$SANDBOX/norepo" arx help "$cmd"
+    done
+
+    assert_out "help rm: alias resolves" "remove|rm <branch>" arx help rm
+    assert_out "ls -h: alias resolves"   "list|ls"            arx ls -h
+
+    run arx help nope
+    has "help <unknown>: error" 'unknown command "nope"'
+    nok "help <unknown>: nonzero"
+
+    # Only the first argument asks for help: later ones go to the command
+    run arx log feature/alpha -h
+    lacks "log <branch> -h: passed to git log" "Runs git log on the archived"
 }
 
 test_add() {

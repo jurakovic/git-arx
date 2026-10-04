@@ -749,7 +749,7 @@ The command detects the current install directory from the running binary and re
 
 ---
 
-Run `git arx help` (or `-h`) to print the built-in usage summary at any time.
+Run `git arx help` (or `-h`) to print the built-in usage summary at any time. For help on a single command, run `git arx <command> -h` (or `--help`, or `git arx help <command>`). Note that `git arx --help` with no command is intercepted by git itself, which looks for a `git-arx` man page – use `git arx help` instead.
 
 ---
 

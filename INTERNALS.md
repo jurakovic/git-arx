@@ -104,12 +104,15 @@ This is important for a tool that writes to storage – silent failures would co
 
 ```bash
 main() {
+    # --version, help, <cmd> -h|--help, upgrade: no repository needed
     _arx_require_git    # sets ARX_GIT_ROOT
     [[ "$cmd" == "config" ]] && { cmd_config "$@"; return; }
     _arx_load_config
     ...
 }
 ```
+
+Help, `--version` and `upgrade` are dispatched before `_arx_require_git`, so they work outside a repository and with a broken config. `-h`/`--help` counts as a help request only as the first argument after the command – later arguments belong to the command, and `log` passes them on to `git log`.
 
 `config` is dispatched before `_arx_load_config` because the config validation in `_arx_load_config` exits on a broken config, and `config` is how a broken config gets fixed.
 
@@ -140,6 +143,10 @@ git-arx: this command requires refs storage (run: git arx config storerefs true)
 ```
 
 Unknown commands print an error referencing `git arx help`.
+
+### Help text
+
+Each command has an `_arx_help_<cmd>` function that prints its row of the `COMMANDS` overview first and, unless called with `summary`, the detailed help after a blank line. `cmd_help` builds the overview by calling every function in `ARX_COMMANDS` with `summary`, so the overview and per-command help share one copy of each row. `_arx_help_command` resolves aliases (`rm`, `mv`, `ls`) and serves `git arx help <cmd>`, `git arx <cmd> -h` and `--help`. A new command needs an entry in `ARX_COMMANDS` and its own `_arx_help_<cmd>`; rows are aligned by hand to the overview's description column.
 
 ---
 
@@ -555,7 +562,7 @@ No install required. The script resolves the path to `git-arx` relative to its o
 The suite is organized into sections, each exercising one command or scenario. The names without the `test_` prefix are what `bash test.sh <section>...` accepts:
 
 ```
-test_help          git arx help / -h
+test_help          git arx help / -h, per-command help (<cmd> -h, --help, help <cmd>)
 test_add           git arx add (normal, conflict, --force, archive-name)
 test_remove        git arx remove
 test_rename        git arx rename

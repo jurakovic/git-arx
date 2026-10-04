@@ -22,6 +22,12 @@ _git_arx() {
 
     local subcommand="${words[2]}"
 
+    # -h/--help is only recognized as the first argument after the command
+    if [[ $cword -eq 3 && "$cur" == --h* ]]; then
+        __gitcomp "--help"
+        return
+    fi
+
     case "$subcommand" in
     status)
         __gitcomp "--all --sort=name --sort=date --order=asc --order=desc"
@@ -100,6 +106,9 @@ _git_arx() {
         ;;
     upgrade)
         __gitcomp "-y --yes"
+        ;;
+    help)
+        [[ $cword -eq 3 ]] && __gitcomp "status update prune list log checkout add remove rename merge push fetch pull purge sync config upgrade"
         ;;
     esac
 }
