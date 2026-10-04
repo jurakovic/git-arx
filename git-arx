@@ -141,38 +141,47 @@ _arx_load_config() {
     # command to carry on – add and update would report "Archived" having
     # stored nothing.
     if [[ "$ARX_STOREREFS" != "true" && "$ARX_STOREFILE" != "true" ]]; then
-        printf 'git-arx: no storage backend enabled (set arx.storerefs=true or arx.storefile=true)\n' >&2
+        printf 'git-arx: no storage backend enabled (run: git arx config storerefs true)\n' >&2
         exit 1
     fi
     # Resolve relative to repo root, not $PWD
     ARX_FILE="${ARX_GIT_ROOT}/${filename}"
-    ARX_REFSPREFIX="$refsprefix"
+    _arx_check_refsprefix "$refsprefix" || exit 1
+    ARX_REFSPREFIX="$REPLY"
+    ARX_REMOTE_PREFIX="${ARX_REFSPREFIX%/}-remote/origin/"
+}
+
+_arx_check_refsprefix() {   # prefix
+    # Validate a refs prefix, leaving it normalized (trailing slash) in REPLY;
+    # print the reason and return 1 if it is unusable. Shared by startup and
+    # `config`, which validates a value before writing it.
+    local prefix="$1"
     # A misconfigured prefix fails silently: a ref written under a prefix that
     # `git for-each-ref <prefix>` can't match back is invisible to every read
     # (the write succeeds, listings come up empty). Enforce the documented
     # shape – must name a namespace under refs/, must end with a slash. A bare
     # "refs/" must be rejected too: it makes every listing match the entire
     # ref namespace and purge target every ref on the remote.
-    if [[ "$ARX_REFSPREFIX" != refs/?* ]]; then
-        printf 'git-arx: arx.refsprefix must be of the form "refs/<namespace>/" (got: "%s")\n' "$ARX_REFSPREFIX" >&2
-        exit 1
+    if [[ "$prefix" != refs/?* ]]; then
+        printf 'git-arx: arx.refsprefix must be of the form "refs/<namespace>/" (got: "%s")\n' "$prefix" >&2
+        return 1
     fi
-    [[ "$ARX_REFSPREFIX" == */ ]] || ARX_REFSPREFIX="${ARX_REFSPREFIX}/"
+    [[ "$prefix" == */ ]] || prefix="${prefix}/"
     # It must also be a namespace of its own. Everything under the prefix is
     # taken to be the archive: prune deletes local branches that match an
     # entry, purge deletes every ref under it on the remote. Pointed inside
     # one of git's namespaces – refs/heads/ above all – both become mass
     # deletions, and the "archive" is the very refs being deleted.
-    case "$ARX_REFSPREFIX" in
+    case "$prefix" in
         refs/heads/*|refs/tags/*|refs/remotes/*|refs/notes/*|refs/replace/*|refs/stash/*|\
         refs/bisect/*|refs/worktree/*|refs/rewritten/*|refs/prefetch/*)
-            local ns="${ARX_REFSPREFIX#refs/}"
+            local ns="${prefix#refs/}"
             printf 'git-arx: arx.refsprefix must be a dedicated namespace, not inside git'"'"'s own refs/%s/ (got: "%s")\n' \
-                "${ns%%/*}" "$ARX_REFSPREFIX" >&2
-            exit 1
+                "${ns%%/*}" "$prefix" >&2
+            return 1
             ;;
     esac
-    ARX_REMOTE_PREFIX="${ARX_REFSPREFIX%/}-remote/origin/"
+    REPLY="$prefix"
 }
 
 _arx_require_storage() {
@@ -180,12 +189,12 @@ _arx_require_storage() {
     case "$required" in
         refs)
             [[ "$ARX_STOREREFS" == "true" ]] && return 0
-            printf 'git-arx: this command requires refs storage (set: git config arx.storerefs true)\n' >&2
+            printf 'git-arx: this command requires refs storage (run: git arx config storerefs true)\n' >&2
             exit 1
             ;;
         file)
             [[ "$ARX_STOREFILE" == "true" ]] && return 0
-            printf 'git-arx: this command requires file storage (set: git config arx.storefile true)\n' >&2
+            printf 'git-arx: this command requires file storage (run: git arx config storefile true)\n' >&2
             exit 1
             ;;
         both)
@@ -1832,6 +1841,375 @@ cmd_purge() {
     printf 'Done. Deleted %d remote ref(s).\n' "${#remote_refs[@]}"
 }
 
+_arx_config_read() {
+    # Every arx.* definition, in the order git resolves them (lowest scope
+    # first), as parallel arrays – one git process, like _arx_load_config.
+    # With --show-scope, -z prints the scope as a NUL-terminated field of its
+    # own ahead of each "key\nvalue" record.
+    ARX_CFG_SCOPES=() ARX_CFG_KEYS=() ARX_CFG_VALUES=() ARX_CFG_VALUELESS=()
+    local scope record
+    while IFS= read -r -d '' scope && IFS= read -r -d '' record; do
+        ARX_CFG_SCOPES+=("$scope")
+        if [[ "$record" == *$'\n'* ]]; then
+            ARX_CFG_KEYS+=("${record%%$'\n'*}")
+            ARX_CFG_VALUES+=("${record#*$'\n'}")
+            ARX_CFG_VALUELESS+=("false")
+        else
+            ARX_CFG_KEYS+=("$record")
+            ARX_CFG_VALUES+=("")
+            ARX_CFG_VALUELESS+=("true")
+        fi
+    done < <(git config -z --show-scope --get-regexp '^arx\.' 2>/dev/null || true)
+}
+
+_arx_scope_rank() {   # scope
+    # Precedence of a config scope: a higher rank overrides a lower one.
+    case "$1" in
+        system)   REPLY=0 ;;
+        global)   REPLY=1 ;;
+        worktree) REPLY=3 ;;
+        command)  REPLY=4 ;;
+        *)        REPLY=2 ;;   # local
+    esac
+}
+
+_arx_config_lookup() {   # key [above|except scope]
+    # The definition of arx.<key> that git resolves to – the last one read –
+    # into ARX_CFG_VALUE, ARX_CFG_ISVALUELESS and ARX_CFG_SCOPE ("default"
+    # when there is none). "above <scope>" considers only scopes that
+    # override <scope>; "except <scope>" ignores <scope> itself, which is
+    # what resolves once that scope's definition is unset.
+    local key="arx.$1" mode="${2:-}" scope="${3:-}" rank=0 i
+    [[ -n "$scope" ]] && { _arx_scope_rank "$scope"; rank="$REPLY"; }
+    ARX_CFG_VALUE="" ARX_CFG_ISVALUELESS="false" ARX_CFG_SCOPE="default"
+    for i in "${!ARX_CFG_KEYS[@]}"; do
+        [[ "${ARX_CFG_KEYS[$i]}" == "$key" ]] || continue
+        case "$mode" in
+            above)
+                _arx_scope_rank "${ARX_CFG_SCOPES[$i]}"
+                (( REPLY > rank )) || continue
+                ;;
+            except)
+                [[ "${ARX_CFG_SCOPES[$i]}" != "$scope" ]] || continue
+                ;;
+        esac
+        ARX_CFG_VALUE="${ARX_CFG_VALUES[$i]}"
+        ARX_CFG_ISVALUELESS="${ARX_CFG_VALUELESS[$i]}"
+        ARX_CFG_SCOPE="${ARX_CFG_SCOPES[$i]}"
+    done
+}
+
+_arx_config_effective() {   # key
+    # The value git-arx acts on for the definition _arx_config_lookup found,
+    # resolved as _arx_load_config resolves it, into REPLY. ARX_CFG_INVALID
+    # is set when the configured value is unusable: a non-boolean, which
+    # falls back to the default, or a malformed refs prefix, which stops
+    # every command and is left in REPLY as configured.
+    local key="$1" default
+    ARX_CFG_INVALID="false"
+    case "$key" in
+        storerefs)  default="true" ;;
+        storefile)  default="false" ;;
+        filepath)   default=".gitarchive" ;;
+        refsprefix) default="refs/arx/" ;;
+    esac
+    if [[ "$ARX_CFG_SCOPE" == "default" ]]; then
+        REPLY="$default"
+        return 0
+    fi
+    case "$key" in
+        storerefs|storefile)
+            _arx_bool "$ARX_CFG_VALUE" "$ARX_CFG_ISVALUELESS" ""
+            if [[ -z "$REPLY" ]]; then
+                ARX_CFG_INVALID="true"
+                REPLY="$default"
+            fi
+            ;;
+        filepath)
+            REPLY="$ARX_CFG_VALUE"
+            ;;
+        refsprefix)
+            if ! _arx_check_refsprefix "$ARX_CFG_VALUE" 2>/dev/null; then
+                ARX_CFG_INVALID="true"
+                REPLY="$ARX_CFG_VALUE"
+            fi
+            ;;
+    esac
+}
+
+_arx_count_refs() {   # prefix – number of refs under it, in REPLY
+    local n=0 _ref
+    while IFS= read -r _ref; do
+        n=$(( n + 1 ))
+    done < <(git for-each-ref --format='%(refname)' "$1")
+    REPLY="$n"
+}
+
+_arx_count_file() {   # filepath – number of records in that archive file, in REPLY
+    local n=0 _rec
+    if [[ -n "$1" ]]; then
+        while IFS= read -r _rec; do
+            n=$(( n + 1 ))
+        done < <(_arx_file_read "${ARX_GIT_ROOT}/$1" 2>/dev/null)
+    fi
+    REPLY="$n"
+}
+
+_arx_count_one_sided() {   # file|refs filepath prefix – entries only that backend holds, in REPLY
+    # By name, as sync matches them: what enabling the other backend would
+    # leave without a copy there until "git arx sync" runs.
+    local side="$1" path="${ARX_GIT_ROOT}/$2" prefix="$3" n=0 name rest
+    declare -A other=()
+    if [[ "$side" == "file" ]]; then
+        while IFS= read -r name; do
+            other["${name#"$prefix"}"]=1
+        done < <(git for-each-ref --format='%(refname)' "$prefix")
+        while IFS=' ' read -r name rest; do
+            [[ -n "${other[$name]+x}" ]] || n=$(( n + 1 ))
+        done < <(_arx_file_read "$path" 2>/dev/null)
+    else
+        while IFS=' ' read -r name rest; do
+            other["$name"]=1
+        done < <(_arx_file_read "$path" 2>/dev/null)
+        while IFS= read -r name; do
+            [[ -n "${other[${name#"$prefix"}]+x}" ]] || n=$(( n + 1 ))
+        done < <(git for-each-ref --format='%(refname)' "$prefix")
+    fi
+    REPLY="$n"
+}
+
+_arx_entries() {   # count – "1 archived entry" / "N archived entries" in REPLY; fails on 0
+    (( $1 > 0 )) || return 1
+    if (( $1 == 1 )); then REPLY="1 archived entry"; else REPLY="$1 archived entries"; fi
+}
+
+cmd_config() {
+    local scope="local" unset=0 force=0
+    local -a args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --global)   scope="global" ;;
+            --unset)    unset=1 ;;
+            --force|-f) force=1 ;;
+            --)         shift; args+=("$@"); break ;;
+            -*) printf 'git-arx: unknown option "%s"\n' "$1" >&2; exit 1 ;;
+            *)  args+=("$1") ;;
+        esac
+        shift
+    done
+
+    local usage='Usage: git arx config [<key> [<value>]] [--global] [--unset] [--force]'
+    if (( ${#args[@]} > 2 )) || (( unset == 1 && ${#args[@]} != 1 )); then
+        printf '%s\n' "$usage" >&2
+        exit 1
+    fi
+    if [[ "$scope" == "global" && ${#args[@]} -lt 2 && $unset -eq 0 ]]; then
+        printf 'git-arx: --global applies only when setting or unsetting a key\n' >&2
+        exit 1
+    fi
+
+    _arx_config_read
+    local keys=(storerefs storefile filepath refsprefix) k
+
+    # No key: list every setting with the value in effect and where it comes from
+    if [[ ${#args[@]} -eq 0 ]]; then
+        local -a values=() sources=()
+        local width=0
+        for k in "${keys[@]}"; do
+            _arx_config_lookup "$k"
+            _arx_config_effective "$k"
+            values+=("$REPLY")
+            (( ${#REPLY} > width )) && width=${#REPLY}
+            if [[ "$ARX_CFG_INVALID" == "true" && "$k" == store* ]]; then
+                sources+=("$ARX_CFG_SCOPE – invalid value \"$ARX_CFG_VALUE\" ignored")
+            elif [[ "$ARX_CFG_INVALID" == "true" ]]; then
+                sources+=("$ARX_CFG_SCOPE – invalid")
+            else
+                sources+=("$ARX_CFG_SCOPE")
+            fi
+        done
+        local i
+        for i in "${!keys[@]}"; do
+            printf '%-10s  %-*s  %s\n' "${keys[$i]}" "$width" "${values[$i]}" "${sources[$i]}"
+        done
+        if [[ "${values[0]}" == "false" && "${values[1]}" == "false" ]]; then
+            printf 'git-arx: no storage backend enabled – other commands refuse to run until one is\n' >&2
+        fi
+        return 0
+    fi
+
+    # Keys are case-insensitive in git; the arx. section prefix is optional
+    local key="${args[0],,}"
+    key="${key#arx.}"
+    case "$key" in
+        storerefs|storefile|filepath|refsprefix) ;;
+        *)
+            printf 'git-arx: unknown config key "%s" (valid: %s)\n' "${args[0]}" "${keys[*]}" >&2
+            exit 1
+            ;;
+    esac
+
+    # Key only: print the value in effect
+    if [[ ${#args[@]} -eq 1 && $unset -eq 0 ]]; then
+        _arx_config_lookup "$key"
+        _arx_config_effective "$key"
+        if [[ "$ARX_CFG_INVALID" == "true" && "$key" == "refsprefix" ]]; then
+            _arx_check_refsprefix "$REPLY" || exit 1
+        fi
+        printf '%s\n' "$REPLY"
+        return 0
+    fi
+
+    # Setting or unsetting. Validate the new value before anything is written,
+    # and store it normalized – the form every other command reads it in.
+    local value=""
+    if [[ $unset -eq 1 ]]; then
+        local i found=0
+        for i in "${!ARX_CFG_KEYS[@]}"; do
+            [[ "${ARX_CFG_KEYS[$i]}" == "arx.$key" && "${ARX_CFG_SCOPES[$i]}" == "$scope" ]] && found=1
+        done
+        if [[ $found -eq 0 ]]; then
+            printf 'arx.%s is not set in %s config – nothing to unset.\n' "$key" "$scope"
+            return 0
+        fi
+    else
+        value="${args[1]}"
+        case "$key" in
+            storerefs|storefile)
+                _arx_bool "$value" "false" ""
+                if [[ -z "$REPLY" ]]; then
+                    printf 'git-arx: arx.%s must be a boolean (true/false, yes/no, on/off, 1/0) (got: "%s")\n' \
+                        "$key" "$value" >&2
+                    exit 1
+                fi
+                value="$REPLY"
+                ;;
+            refsprefix)
+                _arx_check_refsprefix "$value" || exit 1
+                value="$REPLY"
+                ;;
+            filepath)
+                # Resolved against the repository root, so it must be relative
+                if [[ -z "$value" || "$value" == /* || "$value" == [A-Za-z]:* ]]; then
+                    printf 'git-arx: arx.filepath must be a path relative to the repository root (got: "%s")\n' \
+                        "$value" >&2
+                    exit 1
+                fi
+                ;;
+        esac
+    fi
+
+    # The settings in effect now, and once the change is written. A scope
+    # that overrides the one written to keeps its value in effect.
+    declare -A old new
+    for k in "${keys[@]}"; do
+        _arx_config_lookup "$k"
+        _arx_config_effective "$k"
+        old[$k]="$REPLY"
+        new[$k]="$REPLY"
+    done
+    local shadow_scope="" shadow_value=""
+    _arx_config_lookup "$key" above "$scope"
+    if [[ "$ARX_CFG_SCOPE" != "default" ]]; then
+        shadow_scope="$ARX_CFG_SCOPE"
+        shadow_value="$ARX_CFG_VALUE"
+    elif [[ $unset -eq 1 ]]; then
+        _arx_config_lookup "$key" except "$scope"
+        _arx_config_effective "$key"
+        new[$key]="$REPLY"
+    else
+        new[$key]="$value"
+    fi
+
+    if [[ "$key" == store* && "${new[storerefs]}" == "false" && "${new[storefile]}" == "false" ]]; then
+        printf 'git-arx: refusing to disable both storage backends – at least one of arx.storerefs and arx.storefile must stay true\n' >&2
+        exit 1
+    fi
+
+    # What the change hides from every later command. Nothing is moved or
+    # deleted – the entries stay where they are, just no longer read. A
+    # backend can only be disabled while the other one is on (checked above),
+    # so what it hides is what that other one lacks.
+    local -a warnings=() notes=()
+    local old_refs_ok="false"
+    _arx_check_refsprefix "${old[refsprefix]}" 2>/dev/null && old_refs_ok="true"
+    if [[ "${old[$key]}" != "${new[$key]}" ]]; then
+        case "$key" in
+            storerefs)
+                if [[ "${new[storerefs]}" == "false" && "$old_refs_ok" == "true" ]]; then
+                    _arx_count_one_sided refs "${old[filepath]}" "${old[refsprefix]}"
+                    if _arx_entries "$REPLY"; then
+                        warnings+=("$REPLY found only in refs (${old[refsprefix]}) will no longer be read.")
+                        warnings+=('Run "git arx sync" first to copy them into the archive file.')
+                    fi
+                elif [[ "${new[storerefs]}" == "true" && "${old[storefile]}" == "true" && "$old_refs_ok" == "true" ]]; then
+                    _arx_count_one_sided file "${old[filepath]}" "${old[refsprefix]}"
+                    if _arx_entries "$REPLY"; then
+                        notes+=("$REPLY found only in the file – run \"git arx sync\" to create refs for them.")
+                    fi
+                fi
+                ;;
+            storefile)
+                if [[ "${new[storefile]}" == "false" && "$old_refs_ok" == "true" ]]; then
+                    _arx_count_one_sided file "${old[filepath]}" "${old[refsprefix]}"
+                    if _arx_entries "$REPLY"; then
+                        warnings+=("$REPLY found only in ${old[filepath]} will no longer be read.")
+                        warnings+=('Run "git arx sync" first to copy them into refs.')
+                    fi
+                elif [[ "${old[storerefs]}" == "true" && "$old_refs_ok" == "true" ]]; then
+                    _arx_count_one_sided refs "${old[filepath]}" "${old[refsprefix]}"
+                    if _arx_entries "$REPLY"; then
+                        notes+=("$REPLY found only in refs – run \"git arx sync\" to copy them into the file.")
+                    fi
+                fi
+                ;;
+            refsprefix)
+                if [[ "${old[storerefs]}" == "true" && "$old_refs_ok" == "true" ]]; then
+                    _arx_count_refs "${old[refsprefix]}"
+                    if _arx_entries "$REPLY"; then
+                        warnings+=("$REPLY under ${old[refsprefix]} will no longer be read (the refs are left in place).")
+                    fi
+                fi
+                ;;
+            filepath)
+                if [[ "${old[storefile]}" == "true" ]]; then
+                    _arx_count_file "${old[filepath]}"
+                    if _arx_entries "$REPLY"; then
+                        warnings+=("$REPLY in ${old[filepath]} will no longer be read (the file is left in place).")
+                    fi
+                fi
+                ;;
+        esac
+    fi
+
+    if [[ ${#warnings[@]} -gt 0 ]]; then
+        printf 'WARNING: %s\n' "${warnings[0]}"
+        [[ ${#warnings[@]} -gt 1 ]] && printf '         %s\n' "${warnings[@]:1}"
+        if [[ $force -eq 0 ]]; then
+            printf 'Type "yes" to continue: '
+            local answer
+            read -r answer || true
+            if [[ "$answer" != "yes" ]]; then
+                printf 'Aborted.\n'
+                exit 1
+            fi
+        fi
+    fi
+
+    if [[ $unset -eq 1 ]]; then
+        git config "--$scope" --unset-all -- "arx.$key"
+        printf 'Unset arx.%s in %s config.\n' "$key" "$scope"
+    else
+        git config "--$scope" --replace-all -- "arx.$key" "$value"
+        printf 'Set arx.%s = %s in %s config.\n' "$key" "$value" "$scope"
+    fi
+    if [[ -n "$shadow_scope" ]]; then
+        printf 'note: overridden here by the %s value "%s" – no effect in this repository.\n' \
+            "$shadow_scope" "$shadow_value"
+    fi
+    [[ ${#notes[@]} -gt 0 ]] && printf 'note: %s\n' "${notes[@]}" || true
+}
+
 cmd_upgrade() {
     local yes=0
     for arg in "$@"; do
@@ -1919,14 +2297,17 @@ COMMANDS
   sync [-n|--dry-run]                    Reconcile file and refs backends  [file+refs]
        [--force-file]
        [--force-refs]
+  config [<key> [<value>]]               List, get or set arx.* settings
+         [--global] [--unset]            (validated; warns if entries would
+         [-f|--force]                    no longer be read)
   upgrade [-y]                           Upgrade git-arx to the latest version
   help                                   Show this help
   --version, -v                          Show version
 
 STORAGE BACKENDS
   Configured via two independent flags:
-    git config arx.storerefs true|false   (default: true)
-    git config arx.storefile true|false   (default: false)
+    git arx config storerefs true|false   (default: true)
+    git arx config storefile true|false   (default: false)
 
   refs   Git refs under refs/arx/<branch>. Protects commits from gc.
          Enabled by default – archived commits remain reachable,
@@ -1952,6 +2333,8 @@ EXAMPLES
   git arx log feature/my-feature --oneline -10
   git arx checkout feature/my-feature
   git arx sync --dry-run
+  git arx config
+  git arx config storefile true
   git arx push
   git arx push --delete feature/my-feature
   git arx push --prune
@@ -1974,6 +2357,14 @@ main() {
     esac
 
     _arx_require_git    # sets ARX_GIT_ROOT
+
+    # config runs before the config is validated: it is how a broken one gets
+    # fixed, so it must not be refused by the very check it repairs.
+    if [[ "$cmd" == "config" ]]; then
+        cmd_config "$@"
+        return
+    fi
+
     _arx_load_config
 
     case "$cmd" in

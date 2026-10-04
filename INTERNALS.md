@@ -105,10 +105,13 @@ This is important for a tool that writes to storage – silent failures would co
 ```bash
 main() {
     _arx_require_git    # sets ARX_GIT_ROOT
+    [[ "$cmd" == "config" ]] && { cmd_config "$@"; return; }
     _arx_load_config
     ...
 }
 ```
+
+`config` is dispatched before `_arx_load_config` because the config validation in `_arx_load_config` exits on a broken config, and `config` is how a broken config gets fixed.
 
 Startup costs exactly two git subprocesses, which matters because on Windows a git process costs more than most commands' actual work (see [Benchmarking](#benchmarking)).
 
@@ -133,7 +136,7 @@ Bash arithmetic is 64-bit where git's target is a 32-bit `int`, and it wraps sil
 Commands that don't apply to the configured storage call `_arx_require_storage` at the top of their function, which prints a descriptive error and exits:
 
 ```
-git-arx: this command requires refs storage (set: git config arx.storerefs true)
+git-arx: this command requires refs storage (run: git arx config storerefs true)
 ```
 
 Unknown commands print an error referencing `git arx help`.
@@ -499,6 +502,21 @@ Every entry is decided first; the writes are then applied in one `git update-ref
 
 **`--force-file` / `--force-refs`:** When a SHA conflict is detected and a force flag is present, the designated backend is treated as the source of truth and the other is overwritten. This is an escape hatch for the rare case where the user knows which side is correct.
 
+### `arx config`
+
+`_arx_config_read` loads every `arx.*` definition with one `git config -z --show-scope --get-regexp '^arx\.'`. With `--show-scope`, `-z` output puts the scope in a NUL-terminated field of its own ahead of each `key\nvalue` record, so each definition takes two `read -d ''` calls. Definitions come out lowest scope first (system, global, local, worktree, command), so the last one for a key is the one git resolves – the same rule `_arx_load_config` relies on.
+
+`_arx_config_lookup` finds that definition, optionally restricted to scopes that override a given one (`above`) or skipping one scope (`except`). `_arx_config_effective` then turns it into the value git-arx acts on, the way startup would. Booleans go through `_arx_bool` with an empty default, so an unusable value can be told apart from a real one. The refs prefix goes through `_arx_check_refsprefix`, the same function `_arx_load_config` calls.
+
+A write is checked against the state it produces, not just the value written:
+
+- **Validation:** the new value is validated and normalized first (booleans to `true`/`false`, the refs prefix with its trailing `/`), then stored with `git config --local|--global --replace-all -- arx.<key> <value>`. The `--` keeps a value starting with `-` from being read as an option.
+- **Effective value after the change:** a definition in a higher scope than the one written stays in effect. A `--global` write in a repo that sets the key locally changes nothing here, and is reported as such. Otherwise the new value takes effect, or, for `--unset`, whatever `except <scope>` resolves to.
+- **Both backends:** if both would end up disabled, the write is refused. This is checked only when the key is a storage flag, so a repo whose config is already broken can still change its other keys.
+- **Hidden entries:** only an effective change is checked. Disabling a backend is only possible while the other is on, so it hides just the entries the other lacks. `_arx_count_one_sided` matches by name, as `sync` does: one `for-each-ref` and one `_arx_file_read`, compared in an associative array. Changing `refsprefix` or `filepath` hides everything under the old one. Any warning prompts for `yes` unless `--force` is given. Enabling a backend triggers no prompt, just a note pointing at `sync` when the other backend holds entries it lacks.
+
+Nothing is moved: the old refs and the old file stay where they are, so reverting the setting brings the entries back.
+
 ---
 
 ## Shell Completion
@@ -510,6 +528,7 @@ The function is context-aware: it offers different completions depending on the 
 - Subcommand names at `cword == 2` (including aliases: `ls`, `rm`, `mv`)
 - Archived branch names (via `git arx list`) for `checkout`, `log`, `remove`/`rm`, `rename`/`mv`
 - Local branch names (via `__git_heads`) for `add`
+- Key names for `config`, then `true`/`false` for the storage flags and file paths for `filepath`
 - Per-subcommand flags for everything else
 
 Archived branch names are fetched by calling `git arx list` at tab-press time and stripping the two header lines with `awk NR > 2`. This is a subprocess invocation on every completion for those commands — fast enough in practice, but noticeable on repos with very large archives.
@@ -561,6 +580,8 @@ test_slashed_branches  branch names with slashes
 test_double_add    idempotency of add
 test_config_bool   git boolean spellings for storage flags end to end, then a
                    direct _arx_bool sweep checked against git's own verdict
+test_config        git arx config (list, get, set, --unset, --global,
+                   validation, hidden-entry prompts, fixing a broken config)
 test_error_cases   unknown commands, missing args, bad config, running
                    outside a repo or inside a bare one
 test_overwrite_guard   bytes past the final { main; exit; } are never executed

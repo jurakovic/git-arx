@@ -34,7 +34,7 @@ export GIT_CONFIG_GLOBAL=/dev/null
 SECTIONS=(
     help add remove rename list update sort_tiebreak sort_time log checkout prune merge
     refs_backend both_backend push_pull purge sync file_records slashed_branches
-    double_add config_bool error_cases overwrite_guard
+    double_add config_bool config error_cases overwrite_guard
 )
 
 # ---------------------------------------------------------------------------
@@ -1189,6 +1189,111 @@ test_config_bool() {
         done
         i=$(( i + 1 ))
     done
+}
+
+test_config() {
+    section "config"
+    arx_no()  { arx "$@" < /dev/null; }   # answer a prompt with EOF
+    arx_yes() { arx "$@" <<< yes; }
+    # A private global config, so --global has somewhere to write
+    export GIT_CONFIG_GLOBAL="$SANDBOX/gitconfig"
+    : > "$GIT_CONFIG_GLOBAL"
+
+    # Listing: value in effect and its source (fixture: file storage)
+    run arx config
+    ok  "list: exits 0"
+    has "list: shows every key" "storerefs" "storefile" "filepath" "refsprefix"
+    has "list: local value"     "storefile   true"
+    has "list: default source"  "default"
+    assert_out "get: value"                   "true"        arx config storefile
+    assert_out "get: arx. prefix, any case"   "true"        arx config ARX.StoreFile
+    assert_out "get: default when unset"      ".gitarchive" arx config filepath
+
+    # Usage and validation – nothing written on refusal
+    assert_fails "unknown key refused"          arx config bogus
+    assert_fails "unknown option refused"       arx config --bogus
+    assert_fails "too many args refused"        arx config a b c
+    assert_fails "--unset without key refused"  arx config --unset
+    assert_fails "--global on get refused"      arx config --global storefile
+    run arx config storefile maybe
+    nok "non-boolean refused"
+    has "non-boolean: explains" "must be a boolean"
+    assert_fails "refsprefix outside refs/ refused"  arx config refsprefix arx
+    assert_fails "refsprefix in refs/heads/ refused" arx config refsprefix refs/heads/
+    assert_fails "absolute filepath refused"         arx config filepath /tmp/x
+    assert_fails "empty filepath refused"            arx config filepath ""
+    run arx config storefile false
+    nok "disabling the last backend refused"
+    has "last backend: explains" "refusing to disable both"
+    check "refusals wrote nothing" ! git config arx.refsprefix
+
+    # Values are stored normalized
+    assert_ok "set boolean" arx config storerefs yes
+    check "boolean stored as true"     test "$(git config --local arx.storerefs)" = true
+    assert_ok "set refsprefix" arx config refsprefix refs/arxtest -f
+    check "refsprefix stored with /"   test "$(git config --local arx.refsprefix)" = refs/arxtest/
+    assert_ok "unset" arx config --unset refsprefix
+    check "unset removes the key"      ! git config --local arx.refsprefix
+    assert_out "unset again: nothing to do" "not set in local config" arx config --unset refsprefix
+
+    # --global: written there; a local value overriding it is reported
+    run arx config --global storerefs false
+    ok  "--global set succeeds"
+    has "--global: shadowed by local is noted" "overridden here by the local value"
+    check "--global wrote the global config" test "$(git config --global arx.storerefs)" = false
+    assert_ok "--global unset" arx config --global --unset storerefs
+    git config --local arx.storerefs false     # back to the fixture: file only
+
+    # Hidden entries: enabling a backend notes what sync would copy
+    arx add feature/alpha > /dev/null
+    arx add feature/beta  > /dev/null
+    run arx config storerefs true
+    has "enable refs: note points at sync" "2 archived entries found only in the file" "git arx sync"
+    arx sync > /dev/null
+
+    # Disabling a backend whose entries are all in the other: no prompt
+    run arx_no config storefile false
+    ok    "disable synced backend: no prompt"
+    lacks "disable synced backend: no warning" "WARNING"
+    arx config storefile true > /dev/null
+
+    # Disabling a backend with entries the other lacks: prompt
+    git update-ref -d refs/arx/feature/beta   # now only in the file
+    run arx_no config storefile false
+    nok "disable file: declined prompt aborts"
+    has "disable file: warns with the count" "1 archived entry found only in .gitarchive" "Aborted."
+    check "disable file: declined leaves config" test "$(git config --local arx.storefile)" = true
+    run arx_yes config storefile false
+    ok  "disable file: confirmed"
+    check "disable file: written" test "$(git config --local arx.storefile)" = false
+    arx config storefile true > /dev/null
+
+    # Renaming the refs prefix or the file hides everything under the old one
+    run arx_no config refsprefix refs/other
+    nok "refsprefix: declined prompt aborts"
+    has "refsprefix: warns with the count" "1 archived entry under refs/arx/"
+    run arx config refsprefix refs/other --force
+    ok    "refsprefix: --force skips the prompt"
+    has   "refsprefix: --force still warns" "WARNING"
+    lacks "refsprefix: --force does not prompt" "Type \"yes\""
+    check "refsprefix: old refs left in place" ref_exists refs/arx/feature/alpha
+    arx config --unset refsprefix > /dev/null
+    run arx_no config filepath other.txt
+    nok "filepath: declined prompt aborts"
+    has "filepath: warns with the count" "2 archived entries in .gitarchive"
+
+    # A broken config can still be inspected and repaired
+    git config arx.storerefs false
+    git config arx.storefile false
+    git config arx.refsprefix refs/heads
+    assert_fails "broken config: other commands refuse" arx list
+    run arx config
+    ok  "broken config: list still works"
+    has "broken config: invalid prefix flagged" "local – invalid"
+    has "broken config: no backend flagged" "no storage backend enabled"
+    assert_ok "broken config: set storefile" arx config storefile true
+    assert_ok "broken config: fix prefix"    arx config --unset refsprefix
+    assert_ok "repaired config: list works"  arx list
 }
 
 test_error_cases() {

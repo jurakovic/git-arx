@@ -16,7 +16,7 @@ _git_arx() {
     _get_comp_words_by_ref -n : cur prev words cword
 
     if [[ $cword -eq 2 ]]; then
-        __gitcomp "status update prune list ls log checkout add remove rm rename mv merge push fetch pull purge sync upgrade help"
+        __gitcomp "status update prune list ls log checkout add remove rm rename mv merge push fetch pull purge sync config upgrade help"
         return
     fi
 
@@ -79,6 +79,24 @@ _git_arx() {
         ;;
     sync)
         __gitcomp "--dry-run --force-file --force-refs"
+        ;;
+    config)
+        # Positional words after "config", flags excluded: the key, then its value
+        local i key="" npos=0
+        for (( i = 3; i < cword; i++ )); do
+            [[ "${words[i]}" == -* ]] && continue
+            (( npos++ == 0 )) && key="${words[i]}"
+        done
+        if [[ "$cur" == -* ]]; then
+            __gitcomp "--global --unset --force"
+        elif (( npos == 0 )); then
+            __gitcomp "storerefs storefile filepath refsprefix"
+        elif (( npos == 1 )); then
+            case "${key#arx.}" in
+                storerefs|storefile) __gitcomp "true false" ;;
+                filepath)            _filedir ;;
+            esac
+        fi
         ;;
     upgrade)
         __gitcomp "-y --yes"

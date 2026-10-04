@@ -662,6 +662,60 @@ Requires both `arx.storerefs` and `arx.storefile` to be enabled.
 
 ---
 
+### `git arx config [<key> [<value>]]`
+
+View and change the `arx.*` settings described in [Configuration](#configuration). With no arguments, lists every setting with the value in effect and where it comes from – `default`, or the git config scope that sets it (`local`, `global`, `system`, ...):
+
+```bash
+git arx config
+# storerefs   true         default
+# storefile   true         local
+# filepath    .gitarchive  default
+# refsprefix  refs/arx/    global
+```
+
+A value git-arx cannot use is flagged in the source column: a non-boolean storage flag (`local – invalid value "maybe" ignored`, the default applies) or a malformed refs prefix (`local – invalid`, other commands refuse to run until it is fixed).
+
+With a key, prints the value in effect; with a key and a value, sets it. The `arx.` prefix is optional (`storefile` and `arx.storefile` are the same key):
+
+```bash
+git arx config storefile           # true
+git arx config storefile yes
+# Set arx.storefile = true in local config.
+# note: 3 archived entries found only in refs – run "git arx sync" to copy them into the file.
+```
+
+Values are validated before anything is written, and stored in normalized form – booleans as `true`/`false`, the refs prefix with its trailing `/`. A value git-arx would reject (a non-boolean storage flag, an absolute `filepath`, a refs prefix that fails the rules under [`arx.refsprefix`](#arxrefsprefix)) is refused, as is any change that would leave both storage backends disabled. Unknown keys are refused rather than written.
+
+Changes that would make archived entries invisible prompt for confirmation, showing how many entries are affected. Nothing is moved or deleted – the entries stay where they are and come back if the setting is reverted:
+
+| Change | Entries no longer read |
+|---|---|
+| `storerefs` → `false` | entries found only in refs (`git arx sync` first copies them into the file) |
+| `storefile` → `false` | entries found only in the file (`git arx sync` first copies them into refs) |
+| `refsprefix` changed | every ref under the old prefix |
+| `filepath` changed | every entry in the old file |
+
+```bash
+git arx config refsprefix refs/archive
+# WARNING: 12 archived entries under refs/arx/ will no longer be read (the refs are left in place).
+# Type "yes" to continue:
+```
+
+`git arx config` runs even when the configuration is broken. With both backends disabled or an invalid refs prefix, every other command refuses to run, so this is how to fix it.
+
+**Flags:**
+
+| Flag | Description |
+|---|---|
+| `--global` | Write to the global (user) config instead of the repository's. If the repository overrides the key, a note says the change has no effect here. |
+| `--unset` | Remove the key from the local (or, with `--global`, the global) config, so a lower scope or the default applies. |
+| `--force`, `-f` | Skip the confirmation prompt. The warning is still printed. |
+
+Settings can also be changed with native `git config arx.<key> <value>`, which skips the validation and warnings. See [Using native `git config`](#using-native-git-config).
+
+---
+
 ### `git arx upgrade`
 
 Check whether a newer version of `git-arx` is available and optionally install it. Compares the installed version (a short commit hash) against the latest commit on `master` and, if they differ, prompts before installing.
@@ -747,8 +801,8 @@ Lines starting with `#` are comments – unless they have the shape of an entry,
 Enable both for maximum coverage – refs protect commits from GC, while the file provides a portable, human-readable backup that can be committed to the repo and shared via normal `git push`/`git pull`.
 
 ```bash
-git config arx.storerefs true
-git config arx.storefile true
+git arx config storerefs true
+git arx config storefile true
 ```
 
 With both enabled, writes go to refs first, then to the file – if git refuses the ref (for example a [name collision](#git-arx-rename-old-name-new-name)), nothing is written to either. Reads prefer refs and supplement with any file-only entries. The `git arx sync` command reconciles the two if they drift.
@@ -763,15 +817,28 @@ If reducing remote storage is the goal, delete the branch without archiving it. 
 
 ## Configuration
 
-All settings are managed via `git config`. They can be set per-repo or globally. Boolean settings accept any git boolean spelling (`true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`).
+All settings are stored in git config under `arx.*` and are managed with [`git arx config`](#git-arx-config-key-value), which validates each value before writing it. They can be set per-repo (the default) or globally with `--global`. Boolean settings accept any git boolean spelling (`true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`).
+
+### Using native `git config`
+
+Since the settings are ordinary git config keys, native `git config` reads and writes them too. Every `git arx config` command in this section has a native equivalent:
+
+```bash
+git config arx.storefile true            # git arx config storefile true
+git config --global arx.storerefs true   # git arx config storerefs true --global
+git config --unset arx.filepath          # git arx config --unset filepath
+git config --get-regexp '^arx\.'         # git arx config (without defaults or sources)
+```
+
+Native `git config` writes values unchecked. It does not refuse invalid values, does not normalize them, and does not warn when a change hides archived entries. A value git-arx cannot use is caught the next time a command runs: an invalid storage flag falls back to its default, and an invalid refs prefix or both backends disabled makes every command stop with an error until it is fixed.
 
 ### `arx.storerefs`
 
 Controls whether the refs backend is used. Default: `true`. The refs prefix defaults to `refs/arx/` and can be changed with `arx.refsprefix`.
 
 ```bash
-git config arx.storerefs true   # default – GC-safe local storage
-git config arx.storerefs false  # disable if you use file backend only
+git arx config storerefs true   # default – GC-safe local storage
+git arx config storerefs false  # disable if you use file backend only
 ```
 
 ### `arx.storefile`
@@ -779,8 +846,8 @@ git config arx.storerefs false  # disable if you use file backend only
 Controls whether the file backend (`.gitarchive`) is used. Default: `false`.
 
 ```bash
-git config arx.storefile true   # enable for human-readable archives or team sharing
-git config arx.storefile false  # default
+git arx config storefile true   # enable for human-readable archives or team sharing
+git arx config storefile false  # default
 ```
 
 At least one of `arx.storerefs` and `arx.storefile` must be enabled. With both disabled there is nowhere to store anything, so every command stops with an error.
@@ -790,8 +857,8 @@ At least one of `arx.storerefs` and `arx.storefile` must be enabled. With both d
 Path to the archive file, relative to the repository root. Default: `.gitarchive`.
 
 ```bash
-git config arx.filepath .git/arx-archive   # keep it out of the working tree
-git config arx.filepath my-archive.txt
+git arx config filepath .git/arx-archive   # keep it out of the working tree
+git arx config filepath my-archive.txt
 ```
 
 ### `arx.refsprefix`
@@ -799,8 +866,8 @@ git config arx.filepath my-archive.txt
 Refs namespace prefix for the refs backend. Default: `refs/arx/`. Must be of the form `refs/<namespace>/`: a value that does not name a namespace under `refs/` (including a bare `refs/`) is rejected with an error, and a missing trailing `/` is appended automatically. It must also be a namespace of its own – a prefix inside one of git's (`refs/heads/`, `refs/tags/`, `refs/remotes/`, `refs/notes/`, ...) is rejected, since `prune` and `purge` would treat those refs as the archive and delete them.
 
 ```bash
-git config arx.refsprefix refs/arx/        # default
-git config arx.refsprefix refs/archive/    # custom namespace
+git arx config refsprefix refs/arx/        # default
+git arx config refsprefix refs/archive/    # custom namespace
 ```
 
 Changing this after branches are already archived under the old prefix will orphan the existing refs. Migrate by running `git arx push` before changing, updating the prefix on both ends, then running `git arx pull`.
@@ -881,7 +948,7 @@ Or commit `.gitarchive` to the repository – it will sync along with the rest o
 Enable the file backend and commit `.gitarchive` to the repo – it will sync automatically with every `git push`/`git pull`, no `git arx push/pull` needed:
 
 ```bash
-git config arx.storefile true
+git arx config storefile true
 # Optionally commit it so it syncs with the repo
 echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 ```
@@ -891,8 +958,8 @@ echo '.gitarchive' >> .gitignore  # or don't, and commit it instead
 If you prefer a visible text file and are not concerned about `git gc`:
 
 ```bash
-git config arx.storefile true
-git config arx.storerefs false
+git arx config storefile true
+git arx config storerefs false
 ```
 
 ---
